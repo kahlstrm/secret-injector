@@ -1,0 +1,51 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  settings:
+    errcheck:
+      # Ignore write errors on common stdio print helpers.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    revive:
+      severity: error
+      rules:
+        - name: package-comments
+          disabled: true
+        - name: blank-imports
+        - name: context-keys-type
+        - name: early-return
+        - name: errorf
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: if-return
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: var-declaration
+        - name: var-naming
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+    - revive
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
