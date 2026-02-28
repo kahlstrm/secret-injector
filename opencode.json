@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "go test *": "allow",
+      "go build *": "allow",
+      "go fmt *": "allow",
+      "go vet *": "allow",
+      "go mod tidy": "allow",
+      "go tool cover *": "allow"
+    }
+  }
+}
