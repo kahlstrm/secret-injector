@@ -17,73 +17,96 @@ Maps environment variable names to cloud secret locations via JSON configuration
 
 ```json
 {
-  "DATABASE_PASSWORD": "ssm:/app/${ENVIRONMENT}/db/password",
-  "API_KEY": "secretsmanager:${ENVIRONMENT}/api/key",
-  "REDIS_PASSWORD": "ssm:/app/${ENVIRONMENT}/cache/password#version=${VERSION}"
+  "secrets": {
+    "DATABASE_PASSWORD": "ssm:/app/prod/db/password",
+    "API_KEY": "ssm:/app/prod/api/key"
+  }
 }
 ```
 
-### Variable Interpolation
-
-- `${VAR}` - Environment variable substitution
-- Supports multi-environment configs
+Format: `"ENV_VAR_NAME": "<source>:<ref>"`
 
 ## Supported Backends
 
 - AWS SSM Parameter Store (`ssm:`)
-- AWS Secrets Manager (`secretsmanager:`)
 
 ## Usage
 
+### Validate Configuration
+
 ```sh
-# Load from config file
-secret-injector --config secrets.json --exec "myapp"
+# Validate config file
+secret-injector validate --config-file secrets.json
 
-# Load from stdin
-echo '{"API_KEY":"ssm:/key"}' | secret-injector --exec "myapp"
+# Validate with debug output
+secret-injector validate --config-file secrets.json --debug
 
-# Export to shell
-eval $(secret-injector --config secrets.json --export)
+# Validate from stdin
+cat secrets.json | secret-injector validate --config-file -
+```
+
+### Fetch Secrets
+
+```sh
+# Fetch and output as KEY=VALUE lines
+secret-injector fetch --config-file secrets.json
+
+# Fetch and output as JSON
+secret-injector fetch --config-file secrets.json --json
+
+# Fetch from inline JSON
+secret-injector fetch --config-json '{"secrets":{"API_KEY":"ssm:/app/key"}}'
+```
+
+### Execute with Secrets
+
+```sh
+# Load secrets and run a command
+secret-injector exec --config-file secrets.json -- ./myapp --flag arg
+
+# Secrets are injected as environment variables
+secret-injector exec --config-file secrets.json -- printenv DATABASE_PASSWORD
+
+# With inline config
+secret-injector exec --config-json '{"secrets":{"DB_PASS":"ssm:/prod/db/pass"}}' -- ./myapp
 ```
 
 ## Library Usage
 
 ```go
-import "github.com/kahlstrm/secret-injector/pkg/loader"
+import (
+    "github.com/kahlstrm/secret-injector/pkg/config"
+    "github.com/kahlstrm/secret-injector/pkg/loader"
+)
 
-secrets, err := loader.Load(config)
+cfg, err := config.Load(reader)
+if err != nil {
+    return err
+}
+registry, err := loader.Default(ctx, nil)
+if err != nil {
+    return err
+}
+secrets, err := loader.ResolveAll(ctx, cfg, registry)
 ```
 
 ## TODO
 
 ### Core Features
 
-- [ ] JSON config parser
-- [ ] Environment variable injection
-- [ ] Process execution with injected env vars
-- [ ] Shell export mode
-- [ ] Static binary compilation
-
-### Variable Interpolation
-
-- [ ] Environment variable substitution (`${VAR}`)
+- [ ] Shell export mode (`--export` flag)
+- [ ] Environment variable substitution in refs (`${VAR}`)
 - [ ] Validation for missing required variables
 
 ### AWS Implementation
 
-- [ ] SSM Parameter Store client
-- [ ] Secrets Manager client
-- [ ] AWS credential resolution (IAM, env vars, profiles)
-- [ ] Parameter versioning support
-- [ ] Batch loading optimization
-- [ ] Error handling and retries
+- [ ] Secrets Manager client (`secretsmanager:` prefix)
+- [ ] Parameter versioning support (`#version=X`)
 
 ### Advanced Features
 
-- [ ] Config validation
 - [ ] Prefix/suffix support for env var names
 - [ ] Secret caching
-- [ ] Multiple backend support in single config
 - [ ] Kubernetes operator library interface
 - [ ] Docker init container mode
 - [ ] Health checks for secret availability
@@ -100,5 +123,7 @@ secrets, err := loader.Load(config)
 - [ ] Prometheus metrics
 - [ ] Structured logging
 - [ ] Configuration hot-reload
-- [ ] Graceful error handling
-- [ ] Help documentation
+
+### Testing
+
+- [ ] Migrate LocalStack to testcontainers for self-contained integration tests

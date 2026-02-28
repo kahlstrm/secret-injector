@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/kahlstrm/secret-injector/pkg/config"
 	"github.com/kahlstrm/secret-injector/pkg/loader"
@@ -45,6 +47,7 @@ func main() {
 		Commands: []*cli.Command{
 			validateCmd(),
 			fetchCmd(),
+			execCmd(),
 		},
 	}
 
@@ -106,6 +109,48 @@ func fetchCmd() *cli.Command {
 	}
 }
 
+// execCmd returns the `exec` subcommand that loads secrets and executes a command.
+func execCmd() *cli.Command {
+	return &cli.Command{
+		Name:                   "exec",
+		Usage:                  "Load secrets and execute a command with them as environment variables",
+		ArgsUsage:              "-- COMMAND [ARGS...]",
+		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{configInputGroup},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			args := c.Args().Slice()
+			if len(args) == 0 {
+				return errors.New("no command specified; usage: exec [flags] -- COMMAND [ARGS...]")
+			}
+
+			cfg, err := loadConfigFromInput(c)
+			if err != nil {
+				return err
+			}
+
+			warn := func(_ context.Context, msg string) {
+				fmt.Fprintln(os.Stderr, "warning:", msg)
+			}
+			reg, err := loader.Default(ctx, warn)
+			if err != nil {
+				return err
+			}
+			secrets, err := loader.ResolveAll(ctx, cfg, reg)
+			if err != nil {
+				return err
+			}
+
+			env := mergeEnv(os.Environ(), secrets)
+
+			binary, err := exec.LookPath(args[0])
+			if err != nil {
+				return fmt.Errorf("command not found: %s", args[0])
+			}
+
+			return syscall.Exec(binary, args, env)
+		},
+	}
+}
+
 // validateCmd returns the `validate` subcommand.
 func validateCmd() *cli.Command {
 	debugFlag := &cli.BoolFlag{
@@ -162,6 +207,28 @@ func loadConfigFromInput(c *cli.Command) (config.Config, error) {
 	}
 
 	return config.Load(r)
+}
+
+// mergeEnv merges secrets into the current environment.
+// Secrets override existing environment variables with the same key.
+func mergeEnv(current []string, secrets map[string]string) []string {
+	env := make(map[string]string, len(current))
+	for _, e := range current {
+		for i := 0; i < len(e); i++ {
+			if e[i] == '=' {
+				env[e[:i]] = e[i+1:]
+				break
+			}
+		}
+	}
+	for k, v := range secrets {
+		env[k] = v
+	}
+	result := make([]string, 0, len(env))
+	for k, v := range env {
+		result = append(result, k+"="+v)
+	}
+	return result
 }
 
 // printConfigAsInputShape emits the parsed config in the original JSON input shape.
