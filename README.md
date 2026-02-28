@@ -4,7 +4,7 @@ Static Go binary for loading secrets from cloud services into environment variab
 
 ## Overview
 
-Maps environment variable names to cloud secret locations via JSON configuration. Loads secrets and injects them as environment variables for downstream processes.
+Maps environment variable names to cloud secret locations via configuration files (YAML first-class, JSON also supported). Loads secrets and injects them as environment variables for downstream processes.
 
 ## Use Cases
 
@@ -15,15 +15,13 @@ Maps environment variable names to cloud secret locations via JSON configuration
 
 ## Configuration Format
 
-```json
-{
-  "secrets": {
-    "DATABASE_PASSWORD": "ssm:/app/{{.STAGE}}/db/password",
-    "API_KEY": "ssm:/app/{{.STAGE}}/api/key",
-    "REGION_KEY": "ssm:/shared/{{printf \"%s\" .AWS_REGION}}/api"
-  },
-  "optional": ["API_KEY"]
-}
+```yaml
+secrets:
+  DATABASE_PASSWORD: ssm:/app/{{.STAGE}}/db/password
+  API_KEY: ssm:/app/{{.STAGE}}/api/key
+  REGION_KEY: ssm:/shared/{{printf "%s" .AWS_REGION}}/api
+optional:
+  - API_KEY
 ```
 
 Format: `"ENV_VAR_NAME": "<source>:<ref>"`
@@ -31,6 +29,7 @@ Format: `"ENV_VAR_NAME": "<source>:<ref>"`
 - `secrets` entries are required by default.
 - `optional` lists secret env names that should not fail execution when missing.
 - Missing optional secrets emit warnings and are skipped.
+- Config is parsed as YAML; JSON input is accepted because JSON is valid YAML.
 - `{{.VAR}}` placeholders in refs are resolved from repeatable `--var NAME=VALUE` flags.
 - Refs use Go `text/template`, so simple pipelines/conditionals are supported.
 - Missing placeholders fail validation.
@@ -45,14 +44,11 @@ Format: `"ENV_VAR_NAME": "<source>:<ref>"`
 
 Examples:
 
-```json
-{
-  "secrets": {
-    "DB_PASSWORD": "ssm:/app/{{.STAGE}}/db/password",
-    "API_KEY": "ssm:/app/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}/api-key",
-    "REGION_KEY": "ssm:/shared/{{.AWS_REGION | printf \"%s\"}}/key"
-  }
-}
+```yaml
+secrets:
+  DB_PASSWORD: ssm:/app/{{.STAGE}}/db/password
+  API_KEY: ssm:/app/{{if eq .STAGE "prod"}}stable{{else}}preview{{end}}/api-key
+  REGION_KEY: ssm:/shared/{{.AWS_REGION | printf "%s"}}/key
 ```
 
 ## Supported Backends
@@ -61,27 +57,32 @@ Examples:
 
 ## Usage
 
+Provide config with exactly one of:
+
+- `--config-file <path>` (or `--config-file -` for stdin)
+- `--config '<inline YAML/JSON>'`
+
 ### Validate Configuration
 
 ```sh
 # Validate config file
-secret-injector validate --config-file secrets.json
+secret-injector validate --config-file secrets.yaml
 
 # Validate refs with required variables
-secret-injector validate --config-file secrets.json --var STAGE=prod
+secret-injector validate --config-file secrets.yaml --var STAGE=prod
 
 # Validate with debug output
-secret-injector validate --config-file secrets.json --debug
+secret-injector validate --config-file secrets.yaml --debug
 
 # Validate from stdin
-cat secrets.json | secret-injector validate --config-file -
+cat secrets.yaml | secret-injector validate --config-file -
 ```
 
 Example (`--debug`) with a conditional ref template:
 
 ```sh
 secret-injector validate \
-  --config-json '{"secrets":{"API_KEY":"ssm:/app/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}/api-key"}}' \
+  --config '{"secrets":{"API_KEY":"ssm:/app/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}/api-key"}}' \
   --var STAGE=prod \
   --debug
 
@@ -97,32 +98,32 @@ secret-injector validate \
 
 ```sh
 # Fetch and output as KEY=VALUE lines (default)
-secret-injector fetch --config-file secrets.json --var STAGE=prod
+secret-injector fetch --config-file secrets.yaml --var STAGE=prod
 
 # Fetch and output as JSON
-secret-injector fetch --config-file secrets.json --var STAGE=prod --format=json
+secret-injector fetch --config-file secrets.yaml --var STAGE=prod --format=json
 
 # Fetch as shell export statements (for sourcing)
-secret-injector fetch --config-file secrets.json --var STAGE=prod --format=export
+secret-injector fetch --config-file secrets.yaml --var STAGE=prod --format=export
 
 # Source secrets into current shell
-eval "$(secret-injector fetch --config-file secrets.json --var STAGE=prod --format=export)"
+eval "$(secret-injector fetch --config-file secrets.yaml --var STAGE=prod --format=export)"
 
-# Fetch from inline JSON
-secret-injector fetch --config-json '{"secrets":{"API_KEY":"ssm:/app/{{.STAGE}}/key"}}' --var STAGE=prod
+# Fetch from inline config
+secret-injector fetch --config '{"secrets":{"API_KEY":"ssm:/app/{{.STAGE}}/key"}}' --var STAGE=prod
 ```
 
 ### Execute with Secrets
 
 ```sh
 # Load secrets and run a command
-secret-injector exec --config-file secrets.json --var STAGE=prod -- ./myapp --flag arg
+secret-injector exec --config-file secrets.yaml --var STAGE=prod -- ./myapp --flag arg
 
 # Secrets are injected as environment variables
-secret-injector exec --config-file secrets.json --var STAGE=prod -- printenv DATABASE_PASSWORD
+secret-injector exec --config-file secrets.yaml --var STAGE=prod -- printenv DATABASE_PASSWORD
 
 # With inline config
-secret-injector exec --config-json '{"secrets":{"DB_PASS":"ssm:/app/{{.STAGE}}/db/pass"}}' --var STAGE=prod -- ./myapp
+secret-injector exec --config '{"secrets":{"DB_PASS":"ssm:/app/{{.STAGE}}/db/pass"}}' --var STAGE=prod -- ./myapp
 ```
 
 ## Library Usage

@@ -69,6 +69,35 @@ func TestLoad_Valid(t *testing.T) {
 	assert.True(t, cfg.Secrets["REDIS_PASSWORD"].Optional)
 }
 
+func TestLoad_ValidYAML(t *testing.T) {
+	yamlStr := `secrets:
+  DATABASE_PASSWORD: ssm:/app/prod/db/password
+  REDIS_PASSWORD: ssm:/cache:password
+optional:
+  - REDIS_PASSWORD
+`
+	cfg, err := Load(strings.NewReader(yamlStr))
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Secrets)
+	assert.Equal(t, "ssm", cfg.Secrets["DATABASE_PASSWORD"].Source)
+	assert.Equal(t, "/app/prod/db/password", cfg.Secrets["DATABASE_PASSWORD"].Ref)
+	assert.Equal(t, "/cache:password", cfg.Secrets["REDIS_PASSWORD"].Ref)
+	assert.False(t, cfg.Secrets["DATABASE_PASSWORD"].Optional)
+	assert.True(t, cfg.Secrets["REDIS_PASSWORD"].Optional)
+}
+
+func TestLoad_Errors_YAML(t *testing.T) {
+	t.Run("unknown field", func(t *testing.T) {
+		_, err := Load(strings.NewReader("secrets: {}\nextra: 1\n"))
+		require.Error(t, err)
+	})
+
+	t.Run("value not a string", func(t *testing.T) {
+		_, err := Load(strings.NewReader("secrets:\n  X:\n    nested: true\n"))
+		require.Error(t, err)
+	})
+}
+
 func TestLoad_Errors(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -105,6 +134,24 @@ func TestLoad_WithVars_ExpandsRefs(t *testing.T) {
 
 	cfg, err := Load(
 		strings.NewReader(jsonStr),
+		WithVars(map[string]string{
+			"STAGE":      "prod",
+			"AWS_REGION": "eu-west-1",
+		}),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "/app/prod/db/password", cfg.Secrets["DATABASE_PASSWORD"].Ref)
+	assert.Equal(t, "/shared/eu-west-1/api/prod", cfg.Secrets["API_KEY"].Ref)
+}
+
+func TestLoad_WithVars_ExpandsRefsYAML(t *testing.T) {
+	yamlStr := `secrets:
+  DATABASE_PASSWORD: ssm:/app/{{.STAGE}}/db/password
+  API_KEY: ssm:/shared/{{.AWS_REGION}}/api/{{.STAGE}}
+`
+
+	cfg, err := Load(
+		strings.NewReader(yamlStr),
 		WithVars(map[string]string{
 			"STAGE":      "prod",
 			"AWS_REGION": "eu-west-1",

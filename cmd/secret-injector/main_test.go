@@ -182,7 +182,7 @@ func TestValidateCmd_WithVarSubstitution(t *testing.T) {
 		return cmd.Run(context.Background(), []string{
 			"app",
 			"validate",
-			"--config-json", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+			"--config", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
 			"--var", "STAGE=prod",
 			"--debug",
 		})
@@ -200,7 +200,7 @@ func TestValidateCmd_AllowsUnusedVar(t *testing.T) {
 		return cmd.Run(context.Background(), []string{
 			"app",
 			"validate",
-			"--config-json", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+			"--config", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
 			"--var", "STAGE=prod",
 			"--var", "EXTRA=value",
 		})
@@ -217,7 +217,7 @@ func TestValidateCmd_MissingVarFails(t *testing.T) {
 	err := cmd.Run(context.Background(), []string{
 		"app",
 		"validate",
-		"--config-json", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+		"--config", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
 	})
 
 	require.Error(t, err)
@@ -231,7 +231,7 @@ func TestFetchCmd_AllowsUnusedVar(t *testing.T) {
 		return cmd.Run(context.Background(), []string{
 			"app",
 			"fetch",
-			"--config-json", `{"secrets":{}}`,
+			"--config", `{"secrets":{}}`,
 			"--var", "EXTRA=value",
 		})
 	})
@@ -241,13 +241,93 @@ func TestFetchCmd_AllowsUnusedVar(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
+func TestValidateCmd_ConfigFile(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	err := os.WriteFile(configPath, []byte("secrets:\n  X: ssm:/app/{{.STAGE}}/db\n"), 0o600)
+	require.NoError(t, err)
+
+	stdout, stderr, runErr := captureOutput(t, func() error {
+		return cmd.Run(context.Background(), []string{
+			"app",
+			"validate",
+			"--config-file", configPath,
+			"--var", "STAGE=prod",
+			"--debug",
+		})
+	})
+
+	require.NoError(t, runErr)
+	assert.Contains(t, stdout, `"X": "ssm:/app/prod/db"`)
+	assert.Empty(t, stderr)
+}
+
+func TestValidateCmd_ConfigFileStdin(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	stdinR, stdinW, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = stdinW.WriteString("secrets:\n  X: ssm:/app/{{.STAGE}}/db\n")
+	require.NoError(t, err)
+	require.NoError(t, stdinW.Close())
+
+	origStdin := os.Stdin
+	os.Stdin = stdinR
+	defer func() {
+		os.Stdin = origStdin
+	}()
+	defer func() {
+		require.NoError(t, stdinR.Close())
+	}()
+
+	stdout, stderr, runErr := captureOutput(t, func() error {
+		return cmd.Run(context.Background(), []string{
+			"app",
+			"validate",
+			"--config-file", "-",
+			"--var", "STAGE=prod",
+			"--debug",
+		})
+	})
+
+	require.NoError(t, runErr)
+	assert.Contains(t, stdout, `"X": "ssm:/app/prod/db"`)
+	assert.Empty(t, stderr)
+}
+
+func TestValidateCmd_RequiresConfigInput(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	err := cmd.Run(context.Background(), []string{"app", "validate"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no config input provided")
+}
+
+func TestValidateCmd_RejectsConfigAndConfigFileTogether(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	err := os.WriteFile(configPath, []byte("secrets:\n  X: ssm:/app/db\n"), 0o600)
+	require.NoError(t, err)
+
+	err = cmd.Run(context.Background(), []string{
+		"app",
+		"validate",
+		"--config-file", configPath,
+		"--config", `{"secrets":{}}`,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "only one of --config or --config-file")
+}
+
 func TestExecCmd_NoCommand(t *testing.T) {
 	cmd := &cli.Command{
 		Commands: []*cli.Command{execCmd()},
 	}
 
 	// exec with config but no command should error
-	err := cmd.Run(context.Background(), []string{"app", "exec", "--config-json", `{"FOO":"ssm:/test"}`})
+	err := cmd.Run(context.Background(), []string{"app", "exec", "--config", `{"FOO":"ssm:/test"}`})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no command specified")
 }
@@ -258,7 +338,7 @@ func TestExecCmd_CommandNotFound(t *testing.T) {
 	}
 
 	// exec with non-existent command should error
-	err := cmd.Run(context.Background(), []string{"app", "exec", "--config-json", `{"secrets":{}}`, "--", "this-command-does-not-exist-12345"})
+	err := cmd.Run(context.Background(), []string{"app", "exec", "--config", `{"secrets":{}}`, "--", "this-command-does-not-exist-12345"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -275,7 +355,7 @@ func TestExecCmd_Integration(t *testing.T) {
 
 	// Run exec with empty secrets config, executing 'echo hello'
 	// This tests the full flow without needing AWS credentials
-	runCmd := exec.Command(binary, "exec", "--config-json", `{"secrets":{}}`, "--", "echo", "hello")
+	runCmd := exec.Command(binary, "exec", "--config", `{"secrets":{}}`, "--", "echo", "hello")
 	var stdout, stderr bytes.Buffer
 	runCmd.Stdout = &stdout
 	runCmd.Stderr = &stderr
@@ -295,7 +375,7 @@ func TestExecCmd_InheritsEnv(t *testing.T) {
 	require.NoError(t, err, "build failed: %s", string(out))
 
 	// Run exec and verify it inherits environment
-	runCmd := exec.Command(binary, "exec", "--config-json", `{"secrets":{}}`, "--", "printenv", "TEST_INHERIT_VAR")
+	runCmd := exec.Command(binary, "exec", "--config", `{"secrets":{}}`, "--", "printenv", "TEST_INHERIT_VAR")
 	runCmd.Env = append(runCmd.Env, "TEST_INHERIT_VAR=inherited_value")
 	// Need PATH for printenv to work
 	runCmd.Env = append(runCmd.Env, "PATH=/usr/bin:/bin")
@@ -318,7 +398,7 @@ func TestFetchCmd_FormatExport(t *testing.T) {
 	require.NoError(t, err, "build failed: %s", string(out))
 
 	// Test --format=export with empty secrets
-	runCmd := exec.Command(binary, "fetch", "--config-json", `{"secrets":{}}`, "--format=export")
+	runCmd := exec.Command(binary, "fetch", "--config", `{"secrets":{}}`, "--format=export")
 	var stdout, stderr bytes.Buffer
 	runCmd.Stdout = &stdout
 	runCmd.Stderr = &stderr
@@ -344,7 +424,7 @@ func TestFetchCmd_FormatFlag(t *testing.T) {
 			cmd := &cli.Command{
 				Commands: []*cli.Command{fetchCmd()},
 			}
-			err := cmd.Run(context.Background(), []string{"app", "fetch", "--config-json", `{"secrets":{}}`, "--format=" + tt.format})
+			err := cmd.Run(context.Background(), []string{"app", "fetch", "--config", `{"secrets":{}}`, "--format=" + tt.format})
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "unknown format")
@@ -361,6 +441,6 @@ func TestFetchCmd_DefaultFormat(t *testing.T) {
 	}
 
 	// No --format flag should use env format (default)
-	err := cmd.Run(context.Background(), []string{"app", "fetch", "--config-json", `{"secrets":{}}`})
+	err := cmd.Run(context.Background(), []string{"app", "fetch", "--config", `{"secrets":{}}`})
 	require.NoError(t, err)
 }

@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"text/template"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Entry represents a single secret binding in the form "<source>:<ref>".
@@ -22,8 +24,8 @@ type Secrets map[string]Entry
 
 // Config is the top-level configuration structure with a required `secrets` field.
 type Config struct {
-	Secrets  Secrets  `json:"secrets"`
-	Optional []string `json:"optional,omitempty"`
+	Secrets  Secrets  `json:"secrets" yaml:"secrets"`
+	Optional []string `json:"optional,omitempty" yaml:"optional,omitempty"`
 }
 
 type loadOptions struct {
@@ -74,6 +76,20 @@ func (e *Entry) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return fmt.Errorf("entry must be a string: %w", err)
 	}
+	return e.unmarshalString(s)
+}
+
+// UnmarshalYAML allows Entry to be represented as a single YAML string
+// in the form "<source>:<ref>".
+func (e *Entry) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err != nil {
+		return fmt.Errorf("entry must be a string: %w", err)
+	}
+	return e.unmarshalString(s)
+}
+
+func (e *Entry) unmarshalString(s string) error {
 	parsed, err := ParseValue(s)
 	if err != nil {
 		return err
@@ -95,8 +111,8 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 	}
 
 	var cfg Config
-	dec := json.NewDecoder(r)
-	dec.DisallowUnknownFields()
+	dec := yaml.NewDecoder(r)
+	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, err
 	}

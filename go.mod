@@ -11,6 +11,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/localstack v0.40.0
 	github.com/urfave/cli/v3 v3.4.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -78,5 +79,4 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	google.golang.org/grpc v1.79.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

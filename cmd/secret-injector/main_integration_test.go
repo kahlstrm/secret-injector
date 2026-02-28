@@ -75,7 +75,7 @@ func TestIntegration_ExecWithSSM(t *testing.T) {
 	configJSON := `{"secrets":{"DB_PASSWORD":"ssm:/exec-test/db-password","API_KEY":"ssm:/exec-test/api-key"}}`
 
 	// Run exec command that prints the injected env vars
-	cmd := exec.Command(binary, "exec", "--config-json", configJSON, "--", "sh", "-c", "echo $DB_PASSWORD:$API_KEY")
+	cmd := exec.Command(binary, "exec", "--config", configJSON, "--", "sh", "-c", "echo $DB_PASSWORD:$API_KEY")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -107,7 +107,7 @@ func TestIntegration_ExecInheritsAndOverrides(t *testing.T) {
 
 	// Run with an existing OVERRIDE_VAR that should be replaced by SSM value
 	// Also test that INHERITED_VAR is preserved
-	cmd := exec.Command(binary, "exec", "--config-json", configJSON, "--", "sh", "-c", "echo $OVERRIDE_VAR:$INHERITED_VAR")
+	cmd := exec.Command(binary, "exec", "--config", configJSON, "--", "sh", "-c", "echo $OVERRIDE_VAR:$INHERITED_VAR")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -135,7 +135,7 @@ func TestIntegration_ExecWithMissingParameter(t *testing.T) {
 	// Reference a parameter that doesn't exist
 	configJSON := `{"secrets":{"MISSING":"ssm:/nonexistent/param"}}`
 
-	cmd := exec.Command(binary, "exec", "--config-json", configJSON, "--", "echo", "should-not-print")
+	cmd := exec.Command(binary, "exec", "--config", configJSON, "--", "echo", "should-not-print")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -156,7 +156,7 @@ func TestIntegration_ValidateWithTemplateRefs(t *testing.T) {
 
 	configJSON := `{"secrets":{"DB_PASSWORD":"ssm:/validate-test/{{.STAGE}}/db-password"}}`
 
-	cmd := exec.Command(binary, "validate", "--config-json", configJSON, "--var", "STAGE=prod", "--debug")
+	cmd := exec.Command(binary, "validate", "--config", configJSON, "--var", "STAGE=prod", "--debug")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -172,7 +172,7 @@ func TestIntegration_ValidateWithTemplateRefsMissingVar(t *testing.T) {
 
 	configJSON := `{"secrets":{"DB_PASSWORD":"ssm:/validate-test/{{.STAGE}}/db-password"}}`
 
-	cmd := exec.Command(binary, "validate", "--config-json", configJSON)
+	cmd := exec.Command(binary, "validate", "--config", configJSON)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -193,7 +193,7 @@ func TestIntegration_FetchWithTemplateRefs(t *testing.T) {
 
 	configJSON := `{"secrets":{"DB_PASSWORD":"ssm:/fetch-test/{{.STAGE}}/db-password"}}`
 
-	cmd := exec.Command(binary, "fetch", "--config-json", configJSON, "--var", "STAGE=prod")
+	cmd := exec.Command(binary, "fetch", "--config", configJSON, "--var", "STAGE=prod")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -223,7 +223,7 @@ func TestIntegration_ExecWithTemplateRefs(t *testing.T) {
 
 	configJSON := `{"secrets":{"API_KEY":"ssm:/exec-template/{{.STAGE}}/api-key"}}`
 
-	cmd := exec.Command(binary, "exec", "--config-json", configJSON, "--var", "STAGE=prod", "--", "sh", "-c", "echo $API_KEY")
+	cmd := exec.Command(binary, "exec", "--config", configJSON, "--var", "STAGE=prod", "--", "sh", "-c", "echo $API_KEY")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",

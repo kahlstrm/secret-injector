@@ -25,17 +25,9 @@ var (
 		Usage:     "path to config file (use '-' for stdin)",
 		TakesFile: true,
 	}
-	flagConfigJSON = &cli.StringFlag{
-		Name:  "config-json",
-		Usage: "inline config JSON string",
-	}
-	// Mutually exclusive group: exactly one config input must be provided
-	configInputGroup = cli.MutuallyExclusiveFlags{
-		Required: true,
-		Flags: [][]cli.Flag{
-			{flagConfigFile},
-			{flagConfigJSON},
-		},
+	flagConfig = &cli.StringFlag{
+		Name:  "config",
+		Usage: "inline config string (YAML or JSON)",
 	}
 )
 
@@ -79,10 +71,9 @@ func fetchCmd() *cli.Command {
 	}
 	vars := varsFlag()
 	return &cli.Command{
-		Name:                   "fetch",
-		Usage:                  "Resolve and print environment variable bindings",
-		Flags:                  []cli.Flag{formatFlag, vars},
-		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{configInputGroup},
+		Name:  "fetch",
+		Usage: "Resolve and print environment variable bindings",
+		Flags: []cli.Flag{formatFlag, vars, flagConfigFile, flagConfig},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			cfg, err := loadConfigFromInput(c)
 			if err != nil {
@@ -128,11 +119,10 @@ func fetchCmd() *cli.Command {
 func execCmd() *cli.Command {
 	vars := varsFlag()
 	return &cli.Command{
-		Name:                   "exec",
-		Usage:                  "Load secrets and execute a command with them as environment variables",
-		ArgsUsage:              "-- COMMAND [ARGS...]",
-		Flags:                  []cli.Flag{vars},
-		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{configInputGroup},
+		Name:      "exec",
+		Usage:     "Load secrets and execute a command with them as environment variables",
+		ArgsUsage: "-- COMMAND [ARGS...]",
+		Flags:     []cli.Flag{vars, flagConfigFile, flagConfig},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			args := c.Args().Slice()
 			if len(args) == 0 {
@@ -178,8 +168,9 @@ func validateCmd() *cli.Command {
 		Flags: []cli.Flag{
 			debugFlag,
 			vars,
+			flagConfigFile,
+			flagConfig,
 		},
-		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{configInputGroup},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			cfg, err := loadConfigFromInput(c)
 			if err != nil {
@@ -195,10 +186,10 @@ func validateCmd() *cli.Command {
 	}
 }
 
-// loadConfigFromInput reads either --config-json or --config-file,
+// loadConfigFromInput reads either --config or --config-file,
 // validates --var assignments, and decodes it via pkg/config with ref substitution.
 func loadConfigFromInput(c *cli.Command) (config.Config, error) {
-	inline := strings.TrimSpace(c.String("config-json"))
+	inline := strings.TrimSpace(c.String("config"))
 	path := strings.TrimSpace(c.String("config-file"))
 	vars, err := parseVars(c.StringSlice("var"))
 	if err != nil {
@@ -206,8 +197,7 @@ func loadConfigFromInput(c *cli.Command) (config.Config, error) {
 	}
 
 	if inline != "" && path != "" {
-		// Should be prevented by MutuallyExclusiveFlags, but keep a guard.
-		return config.Config{}, errors.New("only one of --config-json or --config-file may be provided")
+		return config.Config{}, errors.New("only one of --config or --config-file may be provided")
 	}
 
 	var r io.Reader

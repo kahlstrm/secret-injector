@@ -69,7 +69,7 @@ Imports must be grouped: (1) stdlib, (2) external deps, (3) internal packages. U
 | Unexported | camelCase | `ssmClient`, `loadConfigFromInput` |
 | Constructors | `NewType(...)` | `NewLoader(...)`, `NewDefault(...)` |
 | Sentinel errors | `var ErrX = errors.New(...)` | `var ErrUnknownSource = ...` |
-| CLI flags | kebab-case | `--config-file`, `--config-json` |
+| CLI flags | kebab-case | `--config-file`, `--config` |
 | Env vars | UPPER_SNAKE_CASE | `AWS_REGION`, `CGO_ENABLED` |
 
 ### Interface Design
