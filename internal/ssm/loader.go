@@ -22,9 +22,9 @@ type ssmClient interface {
 // when the batch call fails (e.g., due to permissions). If the fallback
 // succeeds, an optional onWarning callback is invoked.
 type Loader struct {
-	source             string
-	client             ssmClient
-	onWarningOrMissing func(context.Context, string)
+	source    string
+	client    ssmClient
+	onWarning func(context.Context, string)
 }
 
 // GetParameters supports up to 10 names per call
@@ -33,8 +33,8 @@ const ssmBatchMax = 10
 
 // NewLoader constructs an SSM loader with a custom source label and client.
 // onWarning is optional and may be nil.
-func NewLoader(source string, client ssmClient, onWarningOrMissing func(context.Context, string)) *Loader {
-	return &Loader{source: source, client: client, onWarningOrMissing: onWarningOrMissing}
+func NewLoader(source string, client ssmClient, onWarning func(context.Context, string)) *Loader {
+	return &Loader{source: source, client: client, onWarning: onWarning}
 }
 
 // NewDefault uses AWS default configuration resolution and the standard
@@ -45,7 +45,7 @@ func NewDefault(ctx context.Context, onWarning func(context.Context, string)) (*
 		return nil, err
 	}
 	client := awsssm.NewFromConfig(cfg)
-	return &Loader{source: "ssm", client: client, onWarningOrMissing: onWarning}, nil
+	return &Loader{source: "ssm", client: client, onWarning: onWarning}, nil
 }
 
 // Source returns the configured source name.
@@ -77,15 +77,6 @@ func (l *Loader) Resolve(ctx context.Context, refs []string) (map[string]string,
 	}
 
 	if batchErr == nil {
-		// Verify completeness
-		for _, r := range unique {
-			if _, ok := values[r]; !ok {
-				// for now, let's just call onWarning for missing
-				if l.onWarningOrMissing != nil {
-					l.onWarningOrMissing(ctx, fmt.Sprintf("missing value for ref %q from source %q", r, l.source))
-				}
-			}
-		}
 		return values, nil
 	}
 
@@ -104,18 +95,14 @@ func (l *Loader) Resolve(ctx context.Context, refs []string) (map[string]string,
 			continue
 		}
 		if out.Parameter == nil || out.Parameter.Value == nil {
-			// for now, let's just call onWarning for missing
-			if l.onWarningOrMissing != nil {
-				l.onWarningOrMissing(ctx, fmt.Sprintf("missing value for ref %q from source %q", r, l.source))
-			}
 			continue
 		}
 		fallbackValues[r] = aws.ToString(out.Parameter.Value)
 	}
 
 	if firstErr == nil {
-		if l.onWarningOrMissing != nil {
-			l.onWarningOrMissing(ctx, fmt.Sprintf("GetParameters batch failed: %v; fell back to per-name requests", batchErr))
+		if l.onWarning != nil {
+			l.onWarning(ctx, fmt.Sprintf("GetParameters batch failed: %v; fell back to per-name requests", batchErr))
 		}
 		return fallbackValues, nil
 	}

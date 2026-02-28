@@ -20,11 +20,16 @@ Maps environment variable names to cloud secret locations via JSON configuration
   "secrets": {
     "DATABASE_PASSWORD": "ssm:/app/prod/db/password",
     "API_KEY": "ssm:/app/prod/api/key"
-  }
+  },
+  "optional": ["API_KEY"]
 }
 ```
 
 Format: `"ENV_VAR_NAME": "<source>:<ref>"`
+
+- `secrets` entries are required by default.
+- `optional` lists secret env names that should not fail execution when missing.
+- Missing optional secrets emit warnings and are skipped.
 
 ## Supported Backends
 
@@ -102,7 +107,7 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry)
 
 - [x] Shell export mode (`--export` flag)
 - [ ] Environment variable substitution in refs (`${VAR}`)
-- [ ] Validation for missing required variables
+- [x] Validation for missing required variables
 
 ### AWS Implementation
 

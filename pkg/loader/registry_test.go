@@ -22,7 +22,7 @@ func TestRegistry_New_AndResolve(t *testing.T) {
 		"K": {Source: "sm", Ref: "/k"},
 	}}
 
-	out, err := ResolveAll(context.Background(), cfg, reg)
+	out, err := ResolveAll(context.Background(), cfg, reg, nil)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"A": "va", "K": "vk"}, out)
 
@@ -41,7 +41,7 @@ func TestRegistry_Register_ReplacesExisting(t *testing.T) {
 	reg.Register(newer)
 
 	cfg := cfgpkg.Config{Secrets: cfgpkg.Secrets{"A": {Source: "ssm", Ref: "/a"}}}
-	out, err := ResolveAll(context.Background(), cfg, reg)
+	out, err := ResolveAll(context.Background(), cfg, reg, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "new", out["A"]) // picked the replacement
 

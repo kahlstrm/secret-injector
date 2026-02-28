@@ -104,13 +104,10 @@ func TestSSMLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T) {
 func TestSSMLoader_BatchSuccessButMissingValue(t *testing.T) {
 	refs := []string{"/present", "/missing"}
 	fake := &fakeSSMClient{values: map[string]string{"/present": "x"}}
-	var warns []string
-	l := NewLoader("ssm", fake, func(_ context.Context, msg string) { warns = append(warns, msg) })
+	l := NewLoader("ssm", fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
-	// Only present values are included; missing triggers a warning instead of error.
+	// Only present values are included; missing is handled by the caller layer.
 	assert.Equal(t, map[string]string{"/present": "x"}, got)
-	require.NotEmpty(t, warns)
-	assert.Contains(t, warns[0], "missing value for ref \"/missing\"")
 }

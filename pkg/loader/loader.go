@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	cfgpkg "github.com/kahlstrm/secret-injector/pkg/config"
 )
@@ -23,24 +25,30 @@ type SecretLoader interface {
 // ErrUnknownSource indicates that a secret references an unsupported source.
 var ErrUnknownSource = errors.New("unknown source")
 
+type envBinding struct {
+	env      string
+	optional bool
+}
+
 // ResolveAll loads all secrets from cfg using the provided registry of loaders.
 // Returns a map of env var name -> secret value.
-func ResolveAll(ctx context.Context, cfg cfgpkg.Config, reg Registry) (map[string]string, error) {
+func ResolveAll(ctx context.Context, cfg cfgpkg.Config, reg Registry, onWarning func(context.Context, string)) (map[string]string, error) {
 	// Group refs by source and track which env vars map to which ref.
-	bySource := make(map[string]map[string][]string) // source -> ref -> []env
+	bySource := make(map[string]map[string][]envBinding) // source -> ref -> []env bindings
 	for env, entry := range cfg.Secrets {
 		if _, ok := reg[entry.Source]; !ok {
 			return nil, fmt.Errorf("%w: %s", ErrUnknownSource, entry.Source)
 		}
-		refs, ok := bySource[entry.Source]
+		refBindings, ok := bySource[entry.Source]
 		if !ok {
-			refs = make(map[string][]string)
-			bySource[entry.Source] = refs
+			refBindings = make(map[string][]envBinding)
+			bySource[entry.Source] = refBindings
 		}
-		refs[entry.Ref] = append(refs[entry.Ref], env)
+		refBindings[entry.Ref] = append(refBindings[entry.Ref], envBinding{env: env, optional: entry.Optional})
 	}
 
 	out := make(map[string]string, len(cfg.Secrets))
+	var missingRequired []string
 
 	// For each source, resolve unique refs once and map results back to env names.
 	for source, refToEnvs := range bySource {
@@ -57,15 +65,29 @@ func ResolveAll(ctx context.Context, cfg cfgpkg.Config, reg Registry) (map[strin
 			return nil, err
 		}
 
-		for ref, envs := range refToEnvs {
+		for ref, bindings := range refToEnvs {
 			val, ok := values[ref]
 			if !ok {
-				return nil, fmt.Errorf("missing value for ref %q from source %q", ref, source)
+				for _, binding := range bindings {
+					if binding.optional {
+						if onWarning != nil {
+							onWarning(ctx, fmt.Sprintf("optional secret not found for env %q (source %q, ref %q)", binding.env, source, ref))
+						}
+						continue
+					}
+					missingRequired = append(missingRequired, fmt.Sprintf("env %q (source %q, ref %q)", binding.env, source, ref))
+				}
+				continue
 			}
-			for _, env := range envs {
-				out[env] = val
+			for _, binding := range bindings {
+				out[binding.env] = val
 			}
 		}
+	}
+
+	if len(missingRequired) > 0 {
+		sort.Strings(missingRequired)
+		return nil, fmt.Errorf("missing required secrets: %s", strings.Join(missingRequired, ", "))
 	}
 
 	return out, nil

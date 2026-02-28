@@ -42,7 +42,7 @@ func TestResolveAll_GroupsBySourceAndCallsOnce(t *testing.T) {
 	sm := &fakeLoader{source: "sm", result: map[string]string{"/k1": "x1", "/k2": "x2"}}
 	reg := Registry{"ssm": ssm, "sm": sm}
 
-	out, err := ResolveAll(context.Background(), cfg, reg)
+	out, err := ResolveAll(context.Background(), cfg, reg, nil)
 	require.NoError(t, err)
 
 	// Verify output mapping
@@ -68,23 +68,44 @@ func TestResolveAll_UnknownSource(t *testing.T) {
 	cfg := cfgpkg.Config{Secrets: cfgpkg.Secrets{
 		"A": {Source: "unknown", Ref: "/p1"},
 	}}
-	_, err := ResolveAll(context.Background(), cfg, Registry{})
+	_, err := ResolveAll(context.Background(), cfg, Registry{}, nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrUnknownSource))
 }
 
-func TestResolveAll_ErrorOnMissingValue(t *testing.T) {
+func TestResolveAll_ErrorOnMissingRequiredValues(t *testing.T) {
 	cfg := cfgpkg.Config{Secrets: cfgpkg.Secrets{
-		"A": {Source: "ssm", Ref: "/missing"},
-		"B": {Source: "ssm", Ref: "/ok"},
+		"A": {Source: "ssm", Ref: "/missing-a"},
+		"B": {Source: "ssm", Ref: "/missing-b"},
+	}}
+
+	ssm := &fakeLoader{source: "ssm", result: map[string]string{}}
+	reg := Registry{"ssm": ssm}
+
+	_, err := ResolveAll(context.Background(), cfg, reg, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing required secrets")
+	assert.Contains(t, err.Error(), "env \"A\" (source \"ssm\", ref \"/missing-a\")")
+	assert.Contains(t, err.Error(), "env \"B\" (source \"ssm\", ref \"/missing-b\")")
+}
+
+func TestResolveAll_MissingOptionalWarnsAndContinues(t *testing.T) {
+	cfg := cfgpkg.Config{Secrets: cfgpkg.Secrets{
+		"OPTIONAL": {Source: "ssm", Ref: "/missing", Optional: true},
+		"REQ":      {Source: "ssm", Ref: "/ok"},
 	}}
 
 	ssm := &fakeLoader{source: "ssm", result: map[string]string{"/ok": "value"}}
 	reg := Registry{"ssm": ssm}
 
-	_, err := ResolveAll(context.Background(), cfg, reg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing value for ref \"/missing\"")
+	var warnings []string
+	warn := func(_ context.Context, msg string) { warnings = append(warnings, msg) }
+
+	out, err := ResolveAll(context.Background(), cfg, reg, warn)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"REQ": "value"}, out)
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "optional secret not found for env \"OPTIONAL\"")
 }
 
 // assertUniqueRefs fails the test if any value appears more than once.

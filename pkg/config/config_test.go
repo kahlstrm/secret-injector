@@ -47,7 +47,8 @@ func TestLoad_Valid(t *testing.T) {
         "secrets": {
             "DATABASE_PASSWORD": "ssm:/app/prod/db/password",
             "REDIS_PASSWORD": "ssm:/cache:password"
-        }
+        },
+        "optional": ["REDIS_PASSWORD"]
     }`
 	cfg, err := Load(strings.NewReader(jsonStr))
 	require.NoError(t, err)
@@ -55,6 +56,8 @@ func TestLoad_Valid(t *testing.T) {
 	assert.Equal(t, "ssm", cfg.Secrets["DATABASE_PASSWORD"].Source)
 	assert.Equal(t, "/app/prod/db/password", cfg.Secrets["DATABASE_PASSWORD"].Ref)
 	assert.Equal(t, "/cache:password", cfg.Secrets["REDIS_PASSWORD"].Ref)
+	assert.False(t, cfg.Secrets["DATABASE_PASSWORD"].Optional)
+	assert.True(t, cfg.Secrets["REDIS_PASSWORD"].Optional)
 }
 
 func TestLoad_Errors(t *testing.T) {
@@ -76,5 +79,23 @@ func TestLoad_Errors(t *testing.T) {
 	t.Run("unsupported source surfaced", func(t *testing.T) {
 		_, err := Load(strings.NewReader(`{"secrets": {"X": "sm:/x"}}`))
 		require.Error(t, err)
+	})
+
+	t.Run("optional references unknown secret", func(t *testing.T) {
+		_, err := Load(strings.NewReader(`{"secrets": {"X": "ssm:/x"}, "optional": ["MISSING"]}`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not defined in secrets")
+	})
+
+	t.Run("optional contains duplicates", func(t *testing.T) {
+		_, err := Load(strings.NewReader(`{"secrets": {"X": "ssm:/x"}, "optional": ["X", "X"]}`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate optional")
+	})
+
+	t.Run("optional contains empty value", func(t *testing.T) {
+		_, err := Load(strings.NewReader(`{"secrets": {"X": "ssm:/x"}, "optional": [""]}`))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "empty environment variable")
 	})
 }

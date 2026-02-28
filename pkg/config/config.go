@@ -11,8 +11,9 @@ import (
 // Entry represents a single secret binding in the form "<source>:<ref>".
 // For the MVP, only source == "ssm" is supported.
 type Entry struct {
-	Source string
-	Ref    string
+	Source   string
+	Ref      string
+	Optional bool
 }
 
 // Secrets maps environment variable names to secret entries.
@@ -20,7 +21,8 @@ type Secrets map[string]Entry
 
 // Config is the top-level configuration structure with a required `secrets` field.
 type Config struct {
-	Secrets Secrets `json:"secrets"`
+	Secrets  Secrets  `json:"secrets"`
+	Optional []string `json:"optional,omitempty"`
 }
 
 // ParseValue parses a binding value of the form "<source>:<ref>".
@@ -74,6 +76,25 @@ func Load(r io.Reader) (Config, error) {
 	if cfg.Secrets == nil {
 		return Config{}, errors.New("missing required field 'secrets'")
 	}
+
+	seenOptional := make(map[string]struct{}, len(cfg.Optional))
+	for _, env := range cfg.Optional {
+		env = strings.TrimSpace(env)
+		if env == "" {
+			return Config{}, errors.New("optional contains empty environment variable name")
+		}
+		if _, exists := seenOptional[env]; exists {
+			return Config{}, fmt.Errorf("duplicate optional environment variable %q", env)
+		}
+		entry, exists := cfg.Secrets[env]
+		if !exists {
+			return Config{}, fmt.Errorf("optional environment variable %q is not defined in secrets", env)
+		}
+		entry.Optional = true
+		cfg.Secrets[env] = entry
+		seenOptional[env] = struct{}{}
+	}
+
 	return cfg, nil
 }
 
