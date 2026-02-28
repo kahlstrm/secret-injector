@@ -18,8 +18,9 @@ Maps environment variable names to cloud secret locations via JSON configuration
 ```json
 {
   "secrets": {
-    "DATABASE_PASSWORD": "ssm:/app/prod/db/password",
-    "API_KEY": "ssm:/app/prod/api/key"
+    "DATABASE_PASSWORD": "ssm:/app/{{.STAGE}}/db/password",
+    "API_KEY": "ssm:/app/{{.STAGE}}/api/key",
+    "REGION_KEY": "ssm:/shared/{{printf \"%s\" .AWS_REGION}}/api"
   },
   "optional": ["API_KEY"]
 }
@@ -30,6 +31,29 @@ Format: `"ENV_VAR_NAME": "<source>:<ref>"`
 - `secrets` entries are required by default.
 - `optional` lists secret env names that should not fail execution when missing.
 - Missing optional secrets emit warnings and are skipped.
+- `{{.VAR}}` placeholders in refs are resolved from repeatable `--var NAME=VALUE` flags.
+- Refs use Go `text/template`, so simple pipelines/conditionals are supported.
+- Missing placeholders fail validation.
+
+### Ref Template Rules
+
+- Ref values are rendered with Go `text/template`.
+- Variable values come from `--var NAME=VALUE` flags and are available as `.NAME`.
+- Missing variables fail with a template execution error.
+- Extra `--var` values are ignored.
+- Legacy `${VAR}` syntax is not expanded.
+
+Examples:
+
+```json
+{
+  "secrets": {
+    "DB_PASSWORD": "ssm:/app/{{.STAGE}}/db/password",
+    "API_KEY": "ssm:/app/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}/api-key",
+    "REGION_KEY": "ssm:/shared/{{.AWS_REGION | printf \"%s\"}}/key"
+  }
+}
+```
 
 ## Supported Backends
 
@@ -43,6 +67,9 @@ Format: `"ENV_VAR_NAME": "<source>:<ref>"`
 # Validate config file
 secret-injector validate --config-file secrets.json
 
+# Validate refs with required variables
+secret-injector validate --config-file secrets.json --var STAGE=prod
+
 # Validate with debug output
 secret-injector validate --config-file secrets.json --debug
 
@@ -50,36 +77,52 @@ secret-injector validate --config-file secrets.json --debug
 cat secrets.json | secret-injector validate --config-file -
 ```
 
+Example (`--debug`) with a conditional ref template:
+
+```sh
+secret-injector validate \
+  --config-json '{"secrets":{"API_KEY":"ssm:/app/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}/api-key"}}' \
+  --var STAGE=prod \
+  --debug
+
+# output:
+# {
+#   "secrets": {
+#     "API_KEY": "ssm:/app/stable/api-key"
+#   }
+# }
+```
+
 ### Fetch Secrets
 
 ```sh
 # Fetch and output as KEY=VALUE lines (default)
-secret-injector fetch --config-file secrets.json
+secret-injector fetch --config-file secrets.json --var STAGE=prod
 
 # Fetch and output as JSON
-secret-injector fetch --config-file secrets.json --format=json
+secret-injector fetch --config-file secrets.json --var STAGE=prod --format=json
 
 # Fetch as shell export statements (for sourcing)
-secret-injector fetch --config-file secrets.json --format=export
+secret-injector fetch --config-file secrets.json --var STAGE=prod --format=export
 
 # Source secrets into current shell
-eval "$(secret-injector fetch --config-file secrets.json --format=export)"
+eval "$(secret-injector fetch --config-file secrets.json --var STAGE=prod --format=export)"
 
 # Fetch from inline JSON
-secret-injector fetch --config-json '{"secrets":{"API_KEY":"ssm:/app/key"}}'
+secret-injector fetch --config-json '{"secrets":{"API_KEY":"ssm:/app/{{.STAGE}}/key"}}' --var STAGE=prod
 ```
 
 ### Execute with Secrets
 
 ```sh
 # Load secrets and run a command
-secret-injector exec --config-file secrets.json -- ./myapp --flag arg
+secret-injector exec --config-file secrets.json --var STAGE=prod -- ./myapp --flag arg
 
 # Secrets are injected as environment variables
-secret-injector exec --config-file secrets.json -- printenv DATABASE_PASSWORD
+secret-injector exec --config-file secrets.json --var STAGE=prod -- printenv DATABASE_PASSWORD
 
 # With inline config
-secret-injector exec --config-json '{"secrets":{"DB_PASS":"ssm:/prod/db/pass"}}' -- ./myapp
+secret-injector exec --config-json '{"secrets":{"DB_PASS":"ssm:/app/{{.STAGE}}/db/pass"}}' --var STAGE=prod -- ./myapp
 ```
 
 ## Library Usage
@@ -90,7 +133,10 @@ import (
     "github.com/kahlstrm/secret-injector/pkg/loader"
 )
 
-cfg, err := config.Load(reader)
+cfg, err := config.Load(
+    reader,
+    config.WithVars(map[string]string{"STAGE": "prod"}),
+)
 if err != nil {
     return err
 }
@@ -98,7 +144,7 @@ registry, err := loader.Default(ctx, nil)
 if err != nil {
     return err
 }
-secrets, err := loader.ResolveAll(ctx, cfg, registry)
+secrets, err := loader.ResolveAll(ctx, cfg, registry, nil)
 ```
 
 ## TODO
@@ -106,7 +152,7 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry)
 ### Core Features
 
 - [x] Shell export mode (`--export` flag)
-- [ ] Environment variable substitution in refs (`${VAR}`)
+- [x] Environment variable substitution in refs (`{{.VAR}}`)
 - [x] Validation for missing required variables
 
 ### AWS Implementation
@@ -138,3 +184,4 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry)
 ### Testing
 
 - [x] Migrate LocalStack to testcontainers for self-contained integration tests
+- [ ] Add end-to-end CLI tests for template-based refs (`validate`, `fetch`, `exec`)

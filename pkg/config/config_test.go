@@ -9,36 +9,45 @@ import (
 )
 
 func TestParseValue_Valid(t *testing.T) {
-	cases := []struct {
+	tests := []struct {
+		name   string
 		in     string
 		source string
 		ref    string
 	}{
-		{"ssm:/app/db/password", "ssm", "/app/db/password"},
-		{" ssm : /with/spaces ", "ssm", "/with/spaces"},
-		{"SSM:/UpperCaseSource", "ssm", "/UpperCaseSource"},
-		{"ssm:/contains:colon", "ssm", "/contains:colon"},
+		{name: "simple", in: "ssm:/app/db/password", source: "ssm", ref: "/app/db/password"},
+		{name: "trim spaces", in: " ssm : /with/spaces ", source: "ssm", ref: "/with/spaces"},
+		{name: "source lowercase", in: "SSM:/UpperCaseSource", source: "ssm", ref: "/UpperCaseSource"},
+		{name: "ref contains colon", in: "ssm:/contains:colon", source: "ssm", ref: "/contains:colon"},
 	}
 
-	for _, tc := range cases {
-		got, err := ParseValue(tc.in)
-		require.NoError(t, err, tc.in)
-		assert.Equal(t, tc.source, got.Source, tc.in)
-		assert.Equal(t, tc.ref, got.Ref, tc.in)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseValue(tt.in)
+			require.NoError(t, err, tt.in)
+			assert.Equal(t, tt.source, got.Source, tt.in)
+			assert.Equal(t, tt.ref, got.Ref, tt.in)
+		})
 	}
 }
 
 func TestParseValue_Invalid(t *testing.T) {
-	cases := []string{
-		"",          // empty
-		"no-colon",  // missing colon
-		":ref-only", // empty source
-		"ssm:",      // empty ref
-		" smm : /x", // unsupported source
+	tests := []struct {
+		name string
+		in   string
+	}{
+		{name: "empty", in: ""},
+		{name: "missing colon", in: "no-colon"},
+		{name: "empty source", in: ":ref-only"},
+		{name: "empty ref", in: "ssm:"},
+		{name: "unsupported source", in: " smm : /x"},
 	}
-	for _, in := range cases {
-		_, err := ParseValue(in)
-		require.Error(t, err, in)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseValue(tt.in)
+			require.Error(t, err, tt.in)
+		})
 	}
 }
 
@@ -61,41 +70,131 @@ func TestLoad_Valid(t *testing.T) {
 }
 
 func TestLoad_Errors(t *testing.T) {
-	t.Run("missing secrets", func(t *testing.T) {
-		_, err := Load(strings.NewReader(`{}`))
-		require.Error(t, err)
-	})
+	tests := []struct {
+		name        string
+		json        string
+		errContains string
+	}{
+		{name: "missing secrets", json: `{}`},
+		{name: "unknown field", json: `{"secrets": {}, "extra": 1}`},
+		{name: "value not a string", json: `{"secrets": {"X": {}}}`},
+		{name: "unsupported source surfaced", json: `{"secrets": {"X": "sm:/x"}}`},
+		{name: "optional references unknown secret", json: `{"secrets": {"X": "ssm:/x"}, "optional": ["MISSING"]}`, errContains: "not defined in secrets"},
+		{name: "optional contains duplicates", json: `{"secrets": {"X": "ssm:/x"}, "optional": ["X", "X"]}`, errContains: "duplicate optional"},
+		{name: "optional contains empty value", json: `{"secrets": {"X": "ssm:/x"}, "optional": [""]}`, errContains: "empty environment variable"},
+	}
 
-	t.Run("unknown field", func(t *testing.T) {
-		_, err := Load(strings.NewReader(`{"secrets": {}, "extra": 1}`))
-		require.Error(t, err)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(strings.NewReader(tt.json))
+			require.Error(t, err)
+			if tt.errContains != "" {
+				assert.Contains(t, err.Error(), tt.errContains)
+			}
+		})
+	}
+}
 
-	t.Run("value not a string", func(t *testing.T) {
-		_, err := Load(strings.NewReader(`{"secrets": {"X": {}}}`))
-		require.Error(t, err)
-	})
+func TestLoad_WithVars_ExpandsRefs(t *testing.T) {
+	jsonStr := `{
+        "secrets": {
+            "DATABASE_PASSWORD": "ssm:/app/{{.STAGE}}/db/password",
+            "API_KEY": "ssm:/shared/{{.AWS_REGION}}/api/{{.STAGE}}"
+        }
+    }`
 
-	t.Run("unsupported source surfaced", func(t *testing.T) {
-		_, err := Load(strings.NewReader(`{"secrets": {"X": "sm:/x"}}`))
-		require.Error(t, err)
-	})
+	cfg, err := Load(
+		strings.NewReader(jsonStr),
+		WithVars(map[string]string{
+			"STAGE":      "prod",
+			"AWS_REGION": "eu-west-1",
+		}),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "/app/prod/db/password", cfg.Secrets["DATABASE_PASSWORD"].Ref)
+	assert.Equal(t, "/shared/eu-west-1/api/prod", cfg.Secrets["API_KEY"].Ref)
+}
 
-	t.Run("optional references unknown secret", func(t *testing.T) {
-		_, err := Load(strings.NewReader(`{"secrets": {"X": "ssm:/x"}, "optional": ["MISSING"]}`))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not defined in secrets")
-	})
+func TestLoad_WithVars_AllowsTemplatePipelineAndConditional(t *testing.T) {
+	jsonStr := `{
+        "secrets": {
+            "X": "ssm:/app/{{printf \"%s\" .STAGE}}/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}"
+        }
+    }`
 
-	t.Run("optional contains duplicates", func(t *testing.T) {
-		_, err := Load(strings.NewReader(`{"secrets": {"X": "ssm:/x"}, "optional": ["X", "X"]}`))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "duplicate optional")
-	})
+	cfg, err := Load(
+		strings.NewReader(jsonStr),
+		WithVars(map[string]string{"STAGE": "prod"}),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "/app/prod/stable", cfg.Secrets["X"].Ref)
+}
 
-	t.Run("optional contains empty value", func(t *testing.T) {
-		_, err := Load(strings.NewReader(`{"secrets": {"X": "ssm:/x"}, "optional": [""]}`))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "empty environment variable")
-	})
+func TestLoad_WithVars_Errors(t *testing.T) {
+	tests := []struct {
+		name        string
+		json        string
+		vars        map[string]string
+		setEnv      map[string]string
+		errContains string
+	}{
+		{name: "missing variable", json: `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`, vars: map[string]string{}, errContains: `map has no entry for key "STAGE"`},
+		{name: "malformed placeholder", json: `{"secrets":{"X":"ssm:/app/{{.STAGE"}}`, vars: map[string]string{"STAGE": "prod"}, errContains: "unclosed action"},
+		{name: "no os env fallback", json: `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`, vars: map[string]string{}, setEnv: map[string]string{"STAGE": "prod"}, errContains: `map has no entry for key "STAGE"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for k, v := range tt.setEnv {
+				t.Setenv(k, v)
+			}
+
+			_, err := Load(strings.NewReader(tt.json), WithVars(tt.vars))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errContains)
+		})
+	}
+}
+
+func TestLoad_WithVars_IgnoresExtraVars(t *testing.T) {
+	_, err := Load(
+		strings.NewReader(`{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`),
+		WithVars(map[string]string{
+			"STAGE": "prod",
+			"EXTRA": "value",
+		}),
+	)
+	require.NoError(t, err)
+}
+
+func TestExpandRef(t *testing.T) {
+	tests := []struct {
+		name        string
+		ref         string
+		vars        map[string]string
+		want        string
+		errContains string
+	}{
+		{name: "no placeholders", ref: "/app/prod/db", vars: map[string]string{"STAGE": "prod"}, want: "/app/prod/db"},
+		{name: "single placeholder", ref: "/app/{{.STAGE}}/db", vars: map[string]string{"STAGE": "prod"}, want: "/app/prod/db"},
+		{name: "multiple placeholders", ref: "/app/{{.STAGE}}/{{.AWS_REGION}}", vars: map[string]string{"STAGE": "prod", "AWS_REGION": "eu-west-1"}, want: "/app/prod/eu-west-1"},
+		{name: "pipeline", ref: "/app/{{printf \"%s\" .STAGE}}/db", vars: map[string]string{"STAGE": "prod"}, want: "/app/prod/db"},
+		{name: "conditional", ref: "/app/{{if eq .STAGE \"prod\"}}a{{else}}b{{end}}", vars: map[string]string{"STAGE": "prod"}, want: "/app/a"},
+		{name: "missing variable", ref: "/app/{{.STAGE}}/db", vars: map[string]string{}, errContains: `map has no entry for key "STAGE"`},
+		{name: "malformed template", ref: "/app/{{.STAGE", vars: map[string]string{"STAGE": "prod"}, errContains: "unclosed action"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := expandRef(tt.ref, tt.vars)
+			if tt.errContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

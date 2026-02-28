@@ -39,6 +39,17 @@ var (
 	}
 )
 
+func varsFlag() *cli.StringSliceFlag {
+	return &cli.StringSliceFlag{
+		Name:  "var",
+		Usage: "ref substitution variable in NAME=VALUE form (repeatable)",
+	}
+}
+
+func warnToStderr(_ context.Context, msg string) {
+	fmt.Fprintln(os.Stderr, "warning:", msg)
+}
+
 func main() {
 	cmd := &cli.Command{
 		Name:                  "secret-injector",
@@ -66,10 +77,11 @@ func fetchCmd() *cli.Command {
 		Usage: "output format: env, json, export",
 		Value: "env",
 	}
+	vars := varsFlag()
 	return &cli.Command{
 		Name:                   "fetch",
 		Usage:                  "Resolve and print environment variable bindings",
-		Flags:                  []cli.Flag{formatFlag},
+		Flags:                  []cli.Flag{formatFlag, vars},
 		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{configInputGroup},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			cfg, err := loadConfigFromInput(c)
@@ -82,15 +94,11 @@ func fetchCmd() *cli.Command {
 				return fmt.Errorf("unknown format %q: must be env, json, or export", format)
 			}
 
-			warn := func(_ context.Context, msg string) {
-				// best-effort warning to stderr (no secret values included)
-				fmt.Fprintln(os.Stderr, "warning:", msg)
-			}
-			reg, err := loader.Default(ctx, warn)
+			reg, err := loader.Default(ctx, warnToStderr)
 			if err != nil {
 				return err
 			}
-			values, err := loader.ResolveAll(ctx, cfg, reg, warn)
+			values, err := loader.ResolveAll(ctx, cfg, reg, warnToStderr)
 			if err != nil {
 				return err
 			}
@@ -118,10 +126,12 @@ func fetchCmd() *cli.Command {
 
 // execCmd returns the `exec` subcommand that loads secrets and executes a command.
 func execCmd() *cli.Command {
+	vars := varsFlag()
 	return &cli.Command{
 		Name:                   "exec",
 		Usage:                  "Load secrets and execute a command with them as environment variables",
 		ArgsUsage:              "-- COMMAND [ARGS...]",
+		Flags:                  []cli.Flag{vars},
 		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{configInputGroup},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			args := c.Args().Slice()
@@ -134,14 +144,11 @@ func execCmd() *cli.Command {
 				return err
 			}
 
-			warn := func(_ context.Context, msg string) {
-				fmt.Fprintln(os.Stderr, "warning:", msg)
-			}
-			reg, err := loader.Default(ctx, warn)
+			reg, err := loader.Default(ctx, warnToStderr)
 			if err != nil {
 				return err
 			}
-			secrets, err := loader.ResolveAll(ctx, cfg, reg, warn)
+			secrets, err := loader.ResolveAll(ctx, cfg, reg, warnToStderr)
 			if err != nil {
 				return err
 			}
@@ -164,14 +171,16 @@ func validateCmd() *cli.Command {
 		Name:  "debug",
 		Usage: "print parsed config in original JSON shape",
 	}
+	vars := varsFlag()
 	return &cli.Command{
 		Name:  "validate",
 		Usage: "Parse and validate the configuration (no secret fetching)",
 		Flags: []cli.Flag{
 			debugFlag,
+			vars,
 		},
 		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{configInputGroup},
-		Action: func(_ context.Context, c *cli.Command) error {
+		Action: func(ctx context.Context, c *cli.Command) error {
 			cfg, err := loadConfigFromInput(c)
 			if err != nil {
 				return err
@@ -186,10 +195,15 @@ func validateCmd() *cli.Command {
 	}
 }
 
-// loadConfigFromInput reads either --config-json or --config-file and decodes it via pkg/config.
+// loadConfigFromInput reads either --config-json or --config-file,
+// validates --var assignments, and decodes it via pkg/config with ref substitution.
 func loadConfigFromInput(c *cli.Command) (config.Config, error) {
 	inline := strings.TrimSpace(c.String("config-json"))
 	path := strings.TrimSpace(c.String("config-file"))
+	vars, err := parseVars(c.StringSlice("var"))
+	if err != nil {
+		return config.Config{}, err
+	}
 
 	if inline != "" && path != "" {
 		// Should be prevented by MutuallyExclusiveFlags, but keep a guard.
@@ -213,7 +227,23 @@ func loadConfigFromInput(c *cli.Command) (config.Config, error) {
 		return config.Config{}, errors.New("no config input provided")
 	}
 
-	return config.Load(r)
+	return config.Load(r, config.WithVars(vars))
+}
+
+func parseVars(values []string) (map[string]string, error) {
+	out := make(map[string]string, len(values))
+	for _, raw := range values {
+		name, value, ok := strings.Cut(raw, "=")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("invalid --var %q: expected NAME=VALUE", raw)
+		}
+
+		if _, exists := out[name]; exists {
+			return nil, fmt.Errorf("duplicate --var name %q", name)
+		}
+		out[name] = value
+	}
+	return out, nil
 }
 
 // mergeEnv merges secrets into the current environment.

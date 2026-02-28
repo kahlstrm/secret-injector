@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -11,6 +13,39 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 )
+
+func captureOutput(t *testing.T, fn func() error) (stdout string, stderr string, runErr error) {
+	t.Helper()
+
+	stdoutR, stdoutW, err := os.Pipe()
+	require.NoError(t, err)
+	stderrR, stderrW, err := os.Pipe()
+	require.NoError(t, err)
+
+	origStdout := os.Stdout
+	origStderr := os.Stderr
+	os.Stdout = stdoutW
+	os.Stderr = stderrW
+	defer func() {
+		os.Stdout = origStdout
+		os.Stderr = origStderr
+	}()
+
+	runErr = fn()
+
+	require.NoError(t, stdoutW.Close())
+	require.NoError(t, stderrW.Close())
+
+	stdoutBytes, err := io.ReadAll(stdoutR)
+	require.NoError(t, err)
+	stderrBytes, err := io.ReadAll(stderrR)
+	require.NoError(t, err)
+
+	require.NoError(t, stdoutR.Close())
+	require.NoError(t, stderrR.Close())
+
+	return string(stdoutBytes), string(stderrBytes), runErr
+}
 
 func TestShellQuote(t *testing.T) {
 	tests := []struct {
@@ -106,6 +141,104 @@ func TestMergeEnv(t *testing.T) {
 			assert.Equal(t, tt.wantKeys, got)
 		})
 	}
+}
+
+func TestParseVars(t *testing.T) {
+	tests := []struct {
+		name        string
+		in          []string
+		want        map[string]string
+		errContains string
+	}{
+		{name: "empty", in: nil, want: map[string]string{}},
+		{name: "single", in: []string{"STAGE=prod"}, want: map[string]string{"STAGE": "prod"}},
+		{name: "multiple", in: []string{"STAGE=prod", "AWS_REGION=eu-west-1"}, want: map[string]string{"STAGE": "prod", "AWS_REGION": "eu-west-1"}},
+		{name: "value contains equals", in: []string{"TOKEN=a=b=c"}, want: map[string]string{"TOKEN": "a=b=c"}},
+		{name: "empty value", in: []string{"STAGE="}, want: map[string]string{"STAGE": ""}},
+		{name: "missing equals", in: []string{"STAGE"}, errContains: "expected NAME=VALUE"},
+		{name: "empty name", in: []string{"=prod"}, errContains: "expected NAME=VALUE"},
+		{name: "duplicate name", in: []string{"STAGE=prod", "STAGE=dev"}, errContains: "duplicate --var name"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseVars(tt.in)
+			if tt.errContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestValidateCmd_WithVarSubstitution(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	stdout, stderr, err := captureOutput(t, func() error {
+		return cmd.Run(context.Background(), []string{
+			"app",
+			"validate",
+			"--config-json", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+			"--var", "STAGE=prod",
+			"--debug",
+		})
+	})
+
+	require.NoError(t, err)
+	assert.Contains(t, stdout, `"X": "ssm:/app/prod/db"`)
+	assert.Empty(t, stderr)
+}
+
+func TestValidateCmd_AllowsUnusedVar(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	stdout, stderr, err := captureOutput(t, func() error {
+		return cmd.Run(context.Background(), []string{
+			"app",
+			"validate",
+			"--config-json", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+			"--var", "STAGE=prod",
+			"--var", "EXTRA=value",
+		})
+	})
+
+	require.NoError(t, err)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
+}
+
+func TestValidateCmd_MissingVarFails(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	err := cmd.Run(context.Background(), []string{
+		"app",
+		"validate",
+		"--config-json", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `map has no entry for key "STAGE"`)
+}
+
+func TestFetchCmd_AllowsUnusedVar(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{fetchCmd()}}
+
+	stdout, stderr, err := captureOutput(t, func() error {
+		return cmd.Run(context.Background(), []string{
+			"app",
+			"fetch",
+			"--config-json", `{"secrets":{}}`,
+			"--var", "EXTRA=value",
+		})
+	})
+
+	require.NoError(t, err)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
 }
 
 func TestExecCmd_NoCommand(t *testing.T) {

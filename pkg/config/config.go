@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"text/template"
 )
 
 // Entry represents a single secret binding in the form "<source>:<ref>".
@@ -23,6 +24,23 @@ type Secrets map[string]Entry
 type Config struct {
 	Secrets  Secrets  `json:"secrets"`
 	Optional []string `json:"optional,omitempty"`
+}
+
+type loadOptions struct {
+	vars map[string]string
+}
+
+// LoadOption configures optional behavior for Load.
+type LoadOption func(*loadOptions)
+
+// WithVars enables {{.VAR}} substitution in refs using the provided values.
+func WithVars(vars map[string]string) LoadOption {
+	return func(o *loadOptions) {
+		o.vars = make(map[string]string, len(vars))
+		for k, v := range vars {
+			o.vars[k] = v
+		}
+	}
 }
 
 // ParseValue parses a binding value of the form "<source>:<ref>".
@@ -65,8 +83,17 @@ func (e *Entry) UnmarshalJSON(b []byte) error {
 }
 
 // Load reads and decodes a Config from the provided reader.
-// Validation of individual entries is performed via Entry.UnmarshalJSON/ParseValue.
-func Load(r io.Reader) (Config, error) {
+//
+// {{.VAR}} placeholders in refs are resolved from WithVars when provided.
+// Missing variables and malformed placeholders return errors.
+func Load(r io.Reader, opts ...LoadOption) (Config, error) {
+	options := loadOptions{vars: map[string]string{}}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&options)
+		}
+	}
+
 	var cfg Config
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
@@ -75,6 +102,15 @@ func Load(r io.Reader) (Config, error) {
 	}
 	if cfg.Secrets == nil {
 		return Config{}, errors.New("missing required field 'secrets'")
+	}
+
+	for env, entry := range cfg.Secrets {
+		ref, err := expandRef(entry.Ref, options.vars)
+		if err != nil {
+			return Config{}, err
+		}
+		entry.Ref = ref
+		cfg.Secrets[env] = entry
 	}
 
 	seenOptional := make(map[string]struct{}, len(cfg.Optional))
@@ -96,6 +132,25 @@ func Load(r io.Reader) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func expandRef(ref string, vars map[string]string) (string, error) {
+	if !strings.Contains(ref, "{{") {
+		return ref, nil
+	}
+
+	tmpl, err := template.New("ref").Option("missingkey=error").Parse(ref)
+	if err != nil {
+		return "", err
+	}
+
+	var b strings.Builder
+	b.Grow(len(ref))
+	if err := tmpl.Execute(&b, vars); err != nil {
+		return "", err
+	}
+
+	return b.String(), nil
 }
 
 // LoadFile opens and loads a Config from a file path.

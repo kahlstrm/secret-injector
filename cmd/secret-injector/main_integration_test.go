@@ -148,5 +148,5 @@ func TestIntegration_ExecWithMissingParameter(t *testing.T) {
 
 	err := cmd.Run()
 	require.Error(t, err, "should fail with missing parameter")
-	assert.Contains(t, stderr.String(), "missing value")
+	assert.Contains(t, stderr.String(), "missing required secrets")
 }
