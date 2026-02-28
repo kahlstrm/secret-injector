@@ -48,11 +48,17 @@ cat secrets.json | secret-injector validate --config-file -
 ### Fetch Secrets
 
 ```sh
-# Fetch and output as KEY=VALUE lines
+# Fetch and output as KEY=VALUE lines (default)
 secret-injector fetch --config-file secrets.json
 
 # Fetch and output as JSON
-secret-injector fetch --config-file secrets.json --json
+secret-injector fetch --config-file secrets.json --format=json
+
+# Fetch as shell export statements (for sourcing)
+secret-injector fetch --config-file secrets.json --format=export
+
+# Source secrets into current shell
+eval "$(secret-injector fetch --config-file secrets.json --format=export)"
 
 # Fetch from inline JSON
 secret-injector fetch --config-json '{"secrets":{"API_KEY":"ssm:/app/key"}}'
@@ -94,7 +100,7 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry)
 
 ### Core Features
 
-- [ ] Shell export mode (`--export` flag)
+- [x] Shell export mode (`--export` flag)
 - [ ] Environment variable substitution in refs (`${VAR}`)
 - [ ] Validation for missing required variables
 

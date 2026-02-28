@@ -12,6 +12,31 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "simple", input: "simple", want: "'simple'"},
+		{name: "with space", input: "with space", want: "'with space'"},
+		{name: "single quote", input: "it's quoted", want: `'it'\''s quoted'`},
+		{name: "multiple quotes", input: "a'b'c", want: `'a'\''b'\''c'`},
+		{name: "dollar sign", input: "$HOME", want: "'$HOME'"},
+		{name: "backticks", input: "`cmd`", want: "'`cmd`'"},
+		{name: "empty", input: "", want: "''"},
+		{name: "newline", input: "line1\nline2", want: "'line1\nline2'"},
+		{name: "special chars", input: "a&b|c;d", want: "'a&b|c;d'"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shellQuote(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestMergeEnv(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -147,4 +172,62 @@ func TestExecCmd_InheritsEnv(t *testing.T) {
 	err = runCmd.Run()
 	require.NoError(t, err, "exec failed: stderr=%s", stderr.String())
 	assert.Equal(t, "inherited_value\n", stdout.String())
+}
+
+func TestFetchCmd_FormatExport(t *testing.T) {
+	// Build the binary to a temp location
+	tmpDir := t.TempDir()
+	binary := filepath.Join(tmpDir, "secret-injector")
+
+	buildCmd := exec.Command("go", "build", "-o", binary, ".")
+	buildCmd.Dir = "."
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "build failed: %s", string(out))
+
+	// Test --format=export with empty secrets
+	runCmd := exec.Command(binary, "fetch", "--config-json", `{"secrets":{}}`, "--format=export")
+	var stdout, stderr bytes.Buffer
+	runCmd.Stdout = &stdout
+	runCmd.Stderr = &stderr
+	err = runCmd.Run()
+	require.NoError(t, err, "fetch --format=export failed: stderr=%s", stderr.String())
+	assert.Empty(t, stdout.String())
+}
+
+func TestFetchCmd_FormatFlag(t *testing.T) {
+	tests := []struct {
+		name    string
+		format  string
+		wantErr bool
+	}{
+		{name: "env format", format: "env", wantErr: false},
+		{name: "json format", format: "json", wantErr: false},
+		{name: "export format", format: "export", wantErr: false},
+		{name: "invalid format", format: "invalid", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cli.Command{
+				Commands: []*cli.Command{fetchCmd()},
+			}
+			err := cmd.Run(context.Background(), []string{"app", "fetch", "--config-json", `{"secrets":{}}`, "--format=" + tt.format})
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unknown format")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestFetchCmd_DefaultFormat(t *testing.T) {
+	cmd := &cli.Command{
+		Commands: []*cli.Command{fetchCmd()},
+	}
+
+	// No --format flag should use env format (default)
+	err := cmd.Run(context.Background(), []string{"app", "fetch", "--config-json", `{"secrets":{}}`})
+	require.NoError(t, err)
 }

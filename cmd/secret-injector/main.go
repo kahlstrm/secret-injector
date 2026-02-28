@@ -59,21 +59,27 @@ func main() {
 }
 
 // fetchCmd resolves secrets using the default registry and prints
-// either KEY=VALUE lines or a JSON object of {ENV: VALUE} when --json is set.
+// in the specified format: env (default), json, or export.
 func fetchCmd() *cli.Command {
-	jsonFlag := &cli.BoolFlag{
-		Name:  "json",
-		Usage: "output JSON instead of KEY=VALUE lines",
+	formatFlag := &cli.StringFlag{
+		Name:  "format",
+		Usage: "output format: env, json, export",
+		Value: "env",
 	}
 	return &cli.Command{
 		Name:                   "fetch",
 		Usage:                  "Resolve and print environment variable bindings",
-		Flags:                  []cli.Flag{jsonFlag},
+		Flags:                  []cli.Flag{formatFlag},
 		MutuallyExclusiveFlags: []cli.MutuallyExclusiveFlags{configInputGroup},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			cfg, err := loadConfigFromInput(c)
 			if err != nil {
 				return err
+			}
+
+			format := c.String("format")
+			if format != "env" && format != "json" && format != "export" {
+				return fmt.Errorf("unknown format %q: must be env, json, or export", format)
 			}
 
 			warn := func(_ context.Context, msg string) {
@@ -89,20 +95,21 @@ func fetchCmd() *cli.Command {
 				return err
 			}
 
-			if c.Bool("json") {
+			switch format {
+			case "json":
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
 				return enc.Encode(values)
-			}
-
-			// print in deterministic key order
-			keys := make([]string, 0, len(values))
-			for k := range values {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				fmt.Printf("%s=%s\n", k, values[k])
+			case "export":
+				keys := sortedKeys(values)
+				for _, k := range keys {
+					fmt.Printf("export %s=%s\n", k, shellQuote(values[k]))
+				}
+			default: // env
+				keys := sortedKeys(values)
+				for _, k := range keys {
+					fmt.Printf("%s=%s\n", k, values[k])
+				}
 			}
 			return nil
 		},
@@ -229,6 +236,22 @@ func mergeEnv(current []string, secrets map[string]string) []string {
 		result = append(result, k+"="+v)
 	}
 	return result
+}
+
+// shellQuote wraps a value in single quotes, escaping embedded single quotes.
+// This produces output safe for POSIX shell sourcing.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// sortedKeys returns the keys of a map in sorted order.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // printConfigAsInputShape emits the parsed config in the original JSON input shape.
