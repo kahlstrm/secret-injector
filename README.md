@@ -126,4 +126,4 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry)
 
 ### Testing
 
-- [ ] Migrate LocalStack to testcontainers for self-contained integration tests
+- [x] Migrate LocalStack to testcontainers for self-contained integration tests

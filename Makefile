@@ -1,4 +1,4 @@
-.PHONY: help test coverage coverhtml lint build tidy fmt vet tools localstack-up localstack-down itest
+.PHONY: help test coverage coverhtml lint build tidy fmt vet tools itest itest-v
 
 # Enforce static builds/tests by default
 export CGO_ENABLED=0
@@ -20,9 +20,8 @@ help:
 	@echo "  fmt         go fmt all packages"
 	@echo "  vet         go vet all packages"
 	@echo "  tidy        go mod tidy"
-	@echo "  localstack-up   Start LocalStack (SSM) via docker compose"
-	@echo "  localstack-down Stop LocalStack"
-	@echo "  itest       Run integration tests (requires LocalStack)"
+	@echo "  itest       Run integration tests (uses testcontainers)"
+	@echo "  itest-v     Run integration tests with verbose output"
 
 test:
 	go test $(PKG_ALL)
@@ -52,11 +51,8 @@ build: fmt vet
 	go build -o $(BIN_DIR)/$(BIN_NAME) $(CMD_DIR)
 	@echo "Built $(BIN_DIR)/$(BIN_NAME)"
 
-localstack-up:
-	docker compose up -d
-
-localstack-down:
-	docker compose down
-
 itest:
-	LOCALSTACK=1 go test -tags=integration ./...
+	go test -tags=integration ./...
+
+itest-v:
+	go test -tags=integration -v ./...

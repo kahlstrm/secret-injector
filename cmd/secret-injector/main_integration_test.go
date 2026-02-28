@@ -11,40 +11,33 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/kahlstrm/secret-injector/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// setupLocalStackClient creates an SSM client pointing to LocalStack and seeds test parameters.
-func setupLocalStackClient(t *testing.T, ctx context.Context) *awsssm.Client {
-	endpoint := os.Getenv("LOCALSTACK_URL")
-	if endpoint == "" {
-		endpoint = "http://localhost:4566"
+var testLS *testutil.LocalStackContainer
+
+func TestMain(m *testing.M) {
+	ctx := context.Background()
+	var err error
+	testLS, err = testutil.SetupLocalStack(ctx)
+	if err != nil {
+		// Docker unavailable, skip all integration tests
+		os.Exit(0)
 	}
 
-	resolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, _ ...interface{}) (aws.Endpoint, error) {
-		if service == awsssm.ServiceID {
-			return aws.Endpoint{URL: endpoint, HostnameImmutable: true, PartitionID: "aws", SigningRegion: region}, nil
-		}
-		return aws.Endpoint{}, &aws.EndpointNotFoundError{}
-	})
+	code := m.Run()
 
-	cfg, err := awscfg.LoadDefaultConfig(ctx,
-		awscfg.WithRegion("us-east-1"),
-		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "")),
-		awscfg.WithEndpointResolverWithOptions(resolver),
-	)
-	require.NoError(t, err)
-
-	return awsssm.NewFromConfig(cfg)
+	_ = testLS.Terminate(ctx)
+	os.Exit(code)
 }
 
 // seedParameter creates or overwrites an SSM parameter.
 func seedParameter(t *testing.T, ctx context.Context, client *awsssm.Client, name, value string) {
+	t.Helper()
 	_, err := client.PutParameter(ctx, &awsssm.PutParameterInput{
 		Name:      aws.String(name),
 		Type:      ssmtypes.ParameterTypeSecureString,
@@ -56,6 +49,7 @@ func seedParameter(t *testing.T, ctx context.Context, client *awsssm.Client, nam
 
 // buildBinary builds secret-injector to a temp directory and returns the path.
 func buildBinary(t *testing.T) string {
+	t.Helper()
 	tmpDir := t.TempDir()
 	binary := filepath.Join(tmpDir, "secret-injector")
 
@@ -67,24 +61,16 @@ func buildBinary(t *testing.T) string {
 }
 
 func TestIntegration_ExecWithSSM(t *testing.T) {
-	if os.Getenv("LOCALSTACK") != "1" {
-		t.Skip("set LOCALSTACK=1 to run integration tests")
-	}
-
 	ctx := context.Background()
-	client := setupLocalStackClient(t, ctx)
+	cfg := testLS.MustAWSConfig(t, ctx)
+	client := awsssm.NewFromConfig(cfg)
+	endpoint := testLS.MustEndpoint(t, ctx)
 
 	// Seed test parameters
 	seedParameter(t, ctx, client, "/exec-test/db-password", "secret123")
 	seedParameter(t, ctx, client, "/exec-test/api-key", "key456")
 
 	binary := buildBinary(t)
-
-	// Get LocalStack URL for AWS endpoint override
-	endpoint := os.Getenv("LOCALSTACK_URL")
-	if endpoint == "" {
-		endpoint = "http://localhost:4566"
-	}
 
 	configJSON := `{"secrets":{"DB_PASSWORD":"ssm:/exec-test/db-password","API_KEY":"ssm:/exec-test/api-key"}}`
 
@@ -107,22 +93,15 @@ func TestIntegration_ExecWithSSM(t *testing.T) {
 }
 
 func TestIntegration_ExecInheritsAndOverrides(t *testing.T) {
-	if os.Getenv("LOCALSTACK") != "1" {
-		t.Skip("set LOCALSTACK=1 to run integration tests")
-	}
-
 	ctx := context.Background()
-	client := setupLocalStackClient(t, ctx)
+	cfg := testLS.MustAWSConfig(t, ctx)
+	client := awsssm.NewFromConfig(cfg)
+	endpoint := testLS.MustEndpoint(t, ctx)
 
 	// Seed a parameter that will override an existing env var
 	seedParameter(t, ctx, client, "/exec-test/override", "from-ssm")
 
 	binary := buildBinary(t)
-
-	endpoint := os.Getenv("LOCALSTACK_URL")
-	if endpoint == "" {
-		endpoint = "http://localhost:4566"
-	}
 
 	configJSON := `{"secrets":{"OVERRIDE_VAR":"ssm:/exec-test/override"}}`
 
@@ -148,16 +127,10 @@ func TestIntegration_ExecInheritsAndOverrides(t *testing.T) {
 }
 
 func TestIntegration_ExecWithMissingParameter(t *testing.T) {
-	if os.Getenv("LOCALSTACK") != "1" {
-		t.Skip("set LOCALSTACK=1 to run integration tests")
-	}
+	ctx := context.Background()
+	endpoint := testLS.MustEndpoint(t, ctx)
 
 	binary := buildBinary(t)
-
-	endpoint := os.Getenv("LOCALSTACK_URL")
-	if endpoint == "" {
-		endpoint = "http://localhost:4566"
-	}
 
 	// Reference a parameter that doesn't exist
 	configJSON := `{"secrets":{"MISSING":"ssm:/nonexistent/param"}}`
