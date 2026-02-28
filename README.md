@@ -180,8 +180,9 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry, nil)
 - [ ] Prometheus metrics
 - [ ] Structured logging
 - [ ] Configuration hot-reload
+- [ ] GitHub Actions CI/CD pipeline
 
 ### Testing
 
 - [x] Migrate LocalStack to testcontainers for self-contained integration tests
-- [ ] Add end-to-end CLI tests for template-based refs (`validate`, `fetch`, `exec`)
+- [x] Add end-to-end CLI tests for template-based refs (`validate`, `fetch`, `exec`)

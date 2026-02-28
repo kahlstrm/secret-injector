@@ -150,3 +150,93 @@ func TestIntegration_ExecWithMissingParameter(t *testing.T) {
 	require.Error(t, err, "should fail with missing parameter")
 	assert.Contains(t, stderr.String(), "missing required secrets")
 }
+
+func TestIntegration_ValidateWithTemplateRefs(t *testing.T) {
+	binary := buildBinary(t)
+
+	configJSON := `{"secrets":{"DB_PASSWORD":"ssm:/validate-test/{{.STAGE}}/db-password"}}`
+
+	cmd := exec.Command(binary, "validate", "--config-json", configJSON, "--var", "STAGE=prod", "--debug")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.NoError(t, err, "validate failed: stderr=%s", stderr.String())
+	assert.Contains(t, stdout.String(), `"DB_PASSWORD": "ssm:/validate-test/prod/db-password"`)
+	assert.Empty(t, stderr.String())
+}
+
+func TestIntegration_ValidateWithTemplateRefsMissingVar(t *testing.T) {
+	binary := buildBinary(t)
+
+	configJSON := `{"secrets":{"DB_PASSWORD":"ssm:/validate-test/{{.STAGE}}/db-password"}}`
+
+	cmd := exec.Command(binary, "validate", "--config-json", configJSON)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.Error(t, err, "validate should fail when required template var is missing")
+	assert.Contains(t, stderr.String(), `map has no entry for key "STAGE"`)
+}
+
+func TestIntegration_FetchWithTemplateRefs(t *testing.T) {
+	ctx := context.Background()
+	cfg := testLS.MustAWSConfig(t, ctx)
+	client := awsssm.NewFromConfig(cfg)
+	endpoint := testLS.MustEndpoint(t, ctx)
+
+	seedParameter(t, ctx, client, "/fetch-test/prod/db-password", "fetch-secret")
+
+	binary := buildBinary(t)
+
+	configJSON := `{"secrets":{"DB_PASSWORD":"ssm:/fetch-test/{{.STAGE}}/db-password"}}`
+
+	cmd := exec.Command(binary, "fetch", "--config-json", configJSON, "--var", "STAGE=prod")
+	cmd.Env = []string{
+		"AWS_ACCESS_KEY_ID=test",
+		"AWS_SECRET_ACCESS_KEY=test",
+		"AWS_REGION=us-east-1",
+		"AWS_ENDPOINT_URL=" + endpoint,
+		"PATH=/usr/bin:/bin",
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.NoError(t, err, "fetch failed: stderr=%s", stderr.String())
+	assert.Equal(t, "DB_PASSWORD=fetch-secret\n", stdout.String())
+	assert.Empty(t, stderr.String())
+}
+
+func TestIntegration_ExecWithTemplateRefs(t *testing.T) {
+	ctx := context.Background()
+	cfg := testLS.MustAWSConfig(t, ctx)
+	client := awsssm.NewFromConfig(cfg)
+	endpoint := testLS.MustEndpoint(t, ctx)
+
+	seedParameter(t, ctx, client, "/exec-template/prod/api-key", "exec-secret")
+
+	binary := buildBinary(t)
+
+	configJSON := `{"secrets":{"API_KEY":"ssm:/exec-template/{{.STAGE}}/api-key"}}`
+
+	cmd := exec.Command(binary, "exec", "--config-json", configJSON, "--var", "STAGE=prod", "--", "sh", "-c", "echo $API_KEY")
+	cmd.Env = []string{
+		"AWS_ACCESS_KEY_ID=test",
+		"AWS_SECRET_ACCESS_KEY=test",
+		"AWS_REGION=us-east-1",
+		"AWS_ENDPOINT_URL=" + endpoint,
+		"PATH=/usr/bin:/bin",
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.NoError(t, err, "exec failed: stderr=%s", stderr.String())
+	assert.Equal(t, "exec-secret\n", stdout.String())
+	assert.Empty(t, stderr.String())
+}
