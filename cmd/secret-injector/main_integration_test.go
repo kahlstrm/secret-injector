@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awssecretsmanager "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/kahlstrm/secret-injector/internal/testutil"
@@ -208,6 +209,40 @@ func TestIntegration_FetchWithTemplateRefs(t *testing.T) {
 	err := cmd.Run()
 	require.NoError(t, err, "fetch failed: stderr=%s", stderr.String())
 	assert.Equal(t, "DB_PASSWORD=fetch-secret\n", stdout.String())
+	assert.Empty(t, stderr.String())
+}
+
+func TestIntegration_FetchWithSecretsManager(t *testing.T) {
+	ctx := context.Background()
+	cfg := testLS.MustAWSConfig(t, ctx)
+	client := awssecretsmanager.NewFromConfig(cfg)
+	endpoint := testLS.MustEndpoint(t, ctx)
+
+	_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
+		Name:         aws.String("fetch-sm-api-key"),
+		SecretString: aws.String("sm-secret"),
+	})
+	require.NoError(t, err)
+
+	binary := buildBinary(t)
+
+	configJSON := `{"secrets":{"API_KEY":"secretsmanager:fetch-sm-api-key"}}`
+
+	cmd := exec.Command(binary, "fetch", "--config", configJSON)
+	cmd.Env = []string{
+		"AWS_ACCESS_KEY_ID=test",
+		"AWS_SECRET_ACCESS_KEY=test",
+		"AWS_REGION=us-east-1",
+		"AWS_ENDPOINT_URL=" + endpoint,
+		"PATH=/usr/bin:/bin",
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	require.NoError(t, err, "fetch failed: stderr=%s", stderr.String())
+	assert.Equal(t, "API_KEY=sm-secret\n", stdout.String())
 	assert.Empty(t, stderr.String())
 }
 

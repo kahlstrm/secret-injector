@@ -45,7 +45,7 @@ func warnToStderr(_ context.Context, msg string) {
 func main() {
 	cmd := &cli.Command{
 		Name:                  "secret-injector",
-		Usage:                 "Load secrets from cloud providers into environment variables (MVP: SSM).",
+		Usage:                 "Load secrets from cloud providers into environment variables.",
 		EnableShellCompletion: true,
 		Commands: []*cli.Command{
 			validateCmd(),

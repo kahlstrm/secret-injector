@@ -16,6 +16,7 @@ func TestParseValue_Valid(t *testing.T) {
 		ref    string
 	}{
 		{name: "simple", in: "ssm:/app/db/password", source: "ssm", ref: "/app/db/password"},
+		{name: "secrets manager source", in: "secretsmanager:my/service/secret", source: "secretsmanager", ref: "my/service/secret"},
 		{name: "trim spaces", in: " ssm : /with/spaces ", source: "ssm", ref: "/with/spaces"},
 		{name: "source lowercase", in: "SSM:/UpperCaseSource", source: "ssm", ref: "/UpperCaseSource"},
 		{name: "ref contains colon", in: "ssm:/contains:colon", source: "ssm", ref: "/contains:colon"},
@@ -84,6 +85,19 @@ optional:
 	assert.Equal(t, "/cache:password", cfg.Secrets["REDIS_PASSWORD"].Ref)
 	assert.False(t, cfg.Secrets["DATABASE_PASSWORD"].Optional)
 	assert.True(t, cfg.Secrets["REDIS_PASSWORD"].Optional)
+}
+
+func TestLoad_Valid_SecretsManager(t *testing.T) {
+	jsonStr := `{
+        "secrets": {
+            "API_TOKEN": "secretsmanager:my/service/token"
+        }
+    }`
+	cfg, err := Load(strings.NewReader(jsonStr))
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Secrets)
+	assert.Equal(t, "secretsmanager", cfg.Secrets["API_TOKEN"].Source)
+	assert.Equal(t, "my/service/token", cfg.Secrets["API_TOKEN"].Ref)
 }
 
 func TestLoad_Errors_YAML(t *testing.T) {

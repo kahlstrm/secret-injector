@@ -4,7 +4,7 @@ This document provides guidelines for AI coding agents working in the `secret-in
 
 ## Project Overview
 
-**secret-injector** is a Go CLI tool that loads secrets from cloud providers (currently AWS SSM) and injects them into environment variables for child processes.
+**secret-injector** is a Go CLI tool that loads secrets from cloud providers (currently AWS SSM and AWS Secrets Manager) and injects them into environment variables for child processes.
 
 ```
 secret-injector/
@@ -14,6 +14,7 @@ secret-injector/
 │   ├── loader/            # SecretLoader interface and registry
 │   └── util/              # Small utility packages
 ├── internal/              # Private implementation details
+│   ├── secretsmanager/    # AWS Secrets Manager loader implementation
 │   ├── ssm/               # AWS SSM loader implementation
 │   └── testutil/          # Test helpers (localstack setup)
 ├── examples/              # Sample configurations and demos
@@ -107,6 +108,13 @@ Validate inputs early and return errors immediately.
 ### Test File Location
 
 Tests live next to code as `*_test.go`. Integration tests use `//go:build integration`.
+
+### Backend Integration Requirements
+
+- Backend integrations are mandatory.
+- Any new backend implementation or backend behavior change must include integration tests.
+- Unit tests alone are not sufficient for backend-related work.
+- Backend-related changes are incomplete until integration tests are added/updated and `make itest` passes.
 
 ### Test Structure
 

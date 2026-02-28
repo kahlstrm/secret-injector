@@ -54,6 +54,7 @@ secrets:
 ## Supported Backends
 
 - AWS SSM Parameter Store (`ssm:`)
+- AWS Secrets Manager (`secretsmanager:`)
 
 ## Usage
 
@@ -158,7 +159,7 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry, nil)
 
 ### AWS Implementation
 
-- [ ] Secrets Manager client (`secretsmanager:` prefix)
+- [x] Secrets Manager client (`secretsmanager:` prefix)
 - [ ] Parameter versioning support (`#version=X`)
 
 ### Advanced Features

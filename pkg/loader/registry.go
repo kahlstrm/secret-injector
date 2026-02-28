@@ -3,6 +3,7 @@ package loader
 import (
 	"context"
 
+	secretsmanager "github.com/kahlstrm/secret-injector/internal/secretsmanager"
 	ssm "github.com/kahlstrm/secret-injector/internal/ssm"
 )
 
@@ -26,13 +27,18 @@ func (r Registry) Register(l SecretLoader) {
 	r[l.Source()] = l
 }
 
-// Default returns a Registry with the built-in SSM loader using
-// AWS default credential and region resolution.
+// Default returns a Registry with the built-in SSM and Secrets Manager loaders
+// using AWS default credential and region resolution.
 // onWarning is optional and can be nil.
 func Default(ctx context.Context, onWarning func(context.Context, string)) (Registry, error) {
 	s, err := ssm.NewDefault(ctx, onWarning)
 	if err != nil {
 		return nil, err
 	}
-	return New(s), nil
+	sm, err := secretsmanager.NewDefault(ctx, onWarning)
+	if err != nil {
+		return nil, err
+	}
+
+	return New(s, sm), nil
 }

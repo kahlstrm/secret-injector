@@ -12,7 +12,6 @@ import (
 )
 
 // Entry represents a single secret binding in the form "<source>:<ref>".
-// For the MVP, only source == "ssm" is supported.
 type Entry struct {
 	Source   string
 	Ref      string
@@ -46,8 +45,7 @@ func WithVars(vars map[string]string) LoadOption {
 }
 
 // ParseValue parses a binding value of the form "<source>:<ref>".
-// It trims whitespace, lowercases the source, validates both parts are non-empty,
-// and enforces the MVP rule that only the "ssm" source is supported.
+// It trims whitespace, lowercases the source, and validates both parts are non-empty.
 func ParseValue(s string) (Entry, error) {
 	s = strings.TrimSpace(s)
 	i := strings.IndexRune(s, ':')
@@ -62,8 +60,10 @@ func ParseValue(s string) (Entry, error) {
 		return Entry{}, errors.New("invalid secret value: empty source or ref")
 	}
 
-	if source != "ssm" { // MVP: only SSM supported
-		return Entry{}, fmt.Errorf("unsupported source %q: only 'ssm' is supported in MVP", source)
+	switch source {
+	case "ssm", "secretsmanager":
+	default:
+		return Entry{}, fmt.Errorf("unsupported source %q: supported sources are 'ssm' and 'secretsmanager'", source)
 	}
 
 	return Entry{Source: source, Ref: ref}, nil

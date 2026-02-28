@@ -18,12 +18,12 @@ type LocalStackContainer struct {
 	*localstack.LocalStackContainer
 }
 
-// SetupLocalStack starts a LocalStack container with SSM service enabled.
+// SetupLocalStack starts a LocalStack container with SSM and Secrets Manager enabled.
 // Returns nil if Docker is unavailable (for graceful skip in TestMain).
 func SetupLocalStack(ctx context.Context) (*LocalStackContainer, error) {
 	container, err := localstack.Run(ctx, "localstack/localstack:latest",
 		testcontainers.WithEnv(map[string]string{
-			"SERVICES":           "ssm",
+			"SERVICES":           "ssm,secretsmanager",
 			"DEBUG":              "0",
 			"LS_LOG":             "warn",
 			"AWS_DEFAULT_REGION": "us-east-1",
