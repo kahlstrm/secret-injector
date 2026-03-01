@@ -1,0 +1,50 @@
+name: Release Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer tag to release (vX.Y.Z or prerelease)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create-tag:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.version }}
+    steps:
+      - name: Validate SemVer format
+        run: |
+          tag="${RELEASE_TAG}"
+          semver_regex='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          if [[ ! "$tag" =~ $semver_regex ]]; then
+            echo "Invalid release tag: '$tag'. Expected vX.Y.Z or vX.Y.Z-<prerelease>." >&2
+            exit 1
+          fi
+
+      - name: Ensure workflow runs from main
+        run: |
+          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "Run this workflow from the main branch." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure tag does not already exist
+        run: |
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}")" ]]; then
+            echo "Tag ${RELEASE_TAG} already exists." >&2
+            exit 1
+          fi
+
+      - name: Create and push tag
+        run: |
+          git tag "${RELEASE_TAG}"
+          git push origin "${RELEASE_TAG}"

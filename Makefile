@@ -1,4 +1,4 @@
-.PHONY: help test coverage coverhtml lint build tidy fmt vet tools itest itest-v
+.PHONY: help test coverage coverhtml lint build tidy fmt vet tools itest itest-v release-dry-run
 
 # Enforce static builds/tests by default
 export CGO_ENABLED=0
@@ -9,6 +9,7 @@ BIN_NAME ?= secret-injector
 CMD_DIR ?= ./cmd/secret-injector
 PKG_ALL ?= ./...
 GOLANGCI_LINT ?= golangci-lint
+GORELEASER ?= goreleaser
 VERSION ?= dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -26,6 +27,7 @@ help:
 	@echo "  tidy        go mod tidy"
 	@echo "  itest       Run integration tests (uses testcontainers)"
 	@echo "  itest-v     Run integration tests with verbose output"
+	@echo "  release-dry-run  Run GoReleaser snapshot without publishing"
 
 test:
 	go test $(PKG_ALL)
@@ -60,3 +62,6 @@ itest:
 
 itest-v:
 	go test -tags=integration -v ./...
+
+release-dry-run:
+	$(GORELEASER) release --snapshot --clean --skip=publish

@@ -10,8 +10,33 @@ permissions:
   packages: write
 
 jobs:
+  validate-tag:
+    name: Validate Release Tag
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Validate SemVer format
+        run: |
+          tag="${RELEASE_TAG}"
+          semver_regex='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          if [[ ! "$tag" =~ $semver_regex ]]; then
+            echo "Invalid release tag: '$tag'. Expected vX.Y.Z or vX.Y.Z-<prerelease>." >&2
+            exit 1
+          fi
+
+  verify:
+    name: Verify Release Candidate
+    needs:
+      - validate-tag
+    uses: ./.github/workflows/verify.yml
+    with:
+      run-docker-smoke: false
+
   release:
-    name: Build And Publish Release
+    name: Build And Stage Release
+    needs:
+      - verify
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -26,28 +51,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify formatting
-        run: make fmt && git diff --exit-code
-
-      - name: Run go vet
-        run: make vet
-
-      - name: Run unit tests
-        run: make test
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.4.0
-          args: --timeout=5m
-
       - name: Verify Docker availability
         run: docker version
-
-      - name: Run integration tests
-        env:
-          SECRET_INJECTOR_REQUIRE_DOCKER: "1"
-        run: make itest
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
@@ -62,7 +67,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run GoReleaser
+      - name: Run GoReleaser (draft release)
         uses: goreleaser/goreleaser-action@v6
         with:
           version: v2.12.7

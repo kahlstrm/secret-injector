@@ -3,3 +3,4 @@ localstack/
 
 coverage*.out
 coverage.html
+dist/

@@ -83,7 +83,7 @@ COPY --from=secret-injector /secret-injector /usr/local/bin/secret-injector
 
 ## Release Process
 
-See `docs/release.md` for the release contract and cut/verify checklist.
+See `docs/release.md` for the release contract, tag cut flow, and draft-release publish checklist.
 
 ## Usage
 

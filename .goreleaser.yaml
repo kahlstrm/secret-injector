@@ -38,6 +38,10 @@ changelog:
       - "^chore:"
       - "^ci:"
 
+release:
+  draft: true
+  prerelease: auto
+
 dockers:
   - id: ghcr-amd64
     ids:

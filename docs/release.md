@@ -7,6 +7,7 @@
 - Binary artifacts: `linux` and `darwin` on `amd64` and `arm64`.
 - Build mode: release binaries are built with `CGO_ENABLED=0`.
 - Container artifacts: GHCR multi-arch image for `linux/amd64` and `linux/arm64`.
+- GitHub Releases: created as drafts and published after review.
 
 ## Pre-release checklist
 
@@ -14,8 +15,17 @@
 2. Pull latest `main` locally.
 3. Confirm release notes scope from commits since last tag.
 4. Pick the next SemVer version.
+5. Optional local preflight: `make release-dry-run`.
 
 ## Cut a release
+
+### Option A (recommended): GitHub Actions UI
+
+1. Open **Actions** -> **Release Tag**.
+2. Run workflow on `main` with input `version=vX.Y.Z` (or prerelease tag).
+3. The workflow validates SemVer and creates/pushes the tag.
+
+### Option B: local git tag
 
 ```sh
 git checkout main
@@ -24,15 +34,23 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Pushing the tag triggers `.github/workflows/release.yml` which:
+Tag pushes trigger `.github/workflows/release.yml`, which:
 
+- validates the tag format as SemVer,
 - reruns format, vet, lint, unit tests, and integration tests,
-- creates GitHub release binaries and checksums,
-- publishes GHCR multi-arch images.
+- creates release binaries and `checksums.txt`,
+- publishes GHCR multi-arch images,
+- creates/updates a draft GitHub Release.
+
+## Publish the draft release
+
+1. Open the draft in GitHub Releases.
+2. Verify release notes and attached artifacts.
+3. Click **Publish release**.
 
 ## Post-release verification
 
-1. Verify release assets exist in GitHub Releases.
+1. Verify the published release assets exist in GitHub Releases.
 2. Verify `checksums.txt` is attached.
 3. Verify container image exists:
 
