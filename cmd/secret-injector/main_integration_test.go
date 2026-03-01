@@ -27,13 +27,8 @@ func TestMain(m *testing.M) {
 	var err error
 	testLS, err = testutil.SetupLocalStack(ctx)
 	if err != nil {
-		if os.Getenv("SECRET_INJECTOR_REQUIRE_DOCKER") == "1" {
-			_, _ = fmt.Fprintf(os.Stderr, "failed to start LocalStack: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Docker unavailable, skip all integration tests
-		os.Exit(0)
+		_, _ = fmt.Fprintf(os.Stderr, "failed to start LocalStack: %v\n", err)
+		os.Exit(1)
 	}
 
 	code := m.Run()

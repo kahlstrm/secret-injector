@@ -19,7 +19,7 @@ type LocalStackContainer struct {
 }
 
 // SetupLocalStack starts a LocalStack container with SSM and Secrets Manager enabled.
-// Returns nil if Docker is unavailable (for graceful skip in TestMain).
+// Returns an error if Docker is unavailable.
 func SetupLocalStack(ctx context.Context) (*LocalStackContainer, error) {
 	container, err := localstack.Run(ctx, "localstack/localstack:latest",
 		testcontainers.WithEnv(map[string]string{
