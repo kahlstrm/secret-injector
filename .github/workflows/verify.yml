@@ -120,7 +120,7 @@ jobs:
 
       - name: Smoke test copy-from flow
         run: |
-          docker build -f - -t secret-injector-copytest:ci <<'EOF'
+          docker build -f - -t secret-injector-copytest:ci . <<'EOF'
           FROM alpine:3.22
           COPY --from=secret-injector:ci /secret-injector /usr/local/bin/secret-injector
           ENTRYPOINT ["/usr/local/bin/secret-injector", "--version"]
