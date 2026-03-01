@@ -4,17 +4,25 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer tag to release (vX.Y.Z or prerelease)
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
 
 jobs:
-  validate-tag:
-    name: Validate Release Tag
+  prepare-release:
+    name: Prepare Release
     runs-on: ubuntu-latest
+    outputs:
+      release-tag: ${{ steps.export.outputs.release-tag }}
     env:
-      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
     steps:
       - name: Validate SemVer format
         run: |
@@ -25,10 +33,40 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure workflow runs from main
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "Run this workflow from the main branch." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/checkout@v4
+
+      - name: Ensure tag does not already exist
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [[ -n "$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}")" ]]; then
+            echo "Tag ${RELEASE_TAG} already exists." >&2
+            exit 1
+          fi
+
+      - name: Create and push tag
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          git tag "${RELEASE_TAG}" "${GITHUB_SHA}"
+          git push origin "${RELEASE_TAG}"
+
+      - id: export
+        name: Export release tag
+        run: echo "release-tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+
   verify:
     name: Verify Release Candidate
     needs:
-      - validate-tag
+      - prepare-release
     uses: ./.github/workflows/verify.yml
     with:
       run-docker-smoke: false
@@ -36,14 +74,22 @@ jobs:
   release:
     name: Build And Stage Release
     needs:
+      - prepare-release
       - verify
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release-tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Checkout release tag
+        run: |
+          git fetch --tags origin
+          git checkout "refs/tags/${RELEASE_TAG}"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -74,3 +120,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ env.RELEASE_TAG }}

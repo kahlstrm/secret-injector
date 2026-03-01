@@ -19,13 +19,7 @@
 
 ## Cut a release
 
-### Option A (recommended): GitHub Actions UI
-
-1. Open **Actions** -> **Release Tag**.
-2. Run workflow on `main` with input `version=vX.Y.Z` (or prerelease tag).
-3. The workflow validates SemVer and creates/pushes the tag.
-
-### Option B: local git tag
+Create and push a SemVer tag from `main`:
 
 ```sh
 git checkout main
