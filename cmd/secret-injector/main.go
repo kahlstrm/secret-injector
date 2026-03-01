@@ -46,6 +46,7 @@ func main() {
 	cmd := &cli.Command{
 		Name:                  "secret-injector",
 		Usage:                 "Load secrets from cloud providers into environment variables.",
+		Version:               buildVersion(),
 		EnableShellCompletion: true,
 		Commands: []*cli.Command{
 			validateCmd(),

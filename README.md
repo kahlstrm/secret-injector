@@ -56,12 +56,53 @@ secrets:
 - AWS SSM Parameter Store (`ssm:`)
 - AWS Secrets Manager (`secretsmanager:`)
 
+## Installation
+
+### `go install`
+
+```sh
+go install github.com/kahlstrm/secret-injector/cmd/secret-injector@latest
+```
+
+### GitHub Releases
+
+Download prebuilt archives and checksums from GitHub Releases:
+
+- `https://github.com/kahlstrm/secret-injector/releases`
+
+### Docker image (copy static binary)
+
+Use the GHCR image as a binary source in multi-stage Docker builds:
+
+```dockerfile
+FROM ghcr.io/kahlstrm/secret-injector:v0.1.0 AS secret-injector
+
+FROM alpine:3.22
+COPY --from=secret-injector /secret-injector /usr/local/bin/secret-injector
+```
+
+## Release Process
+
+See `docs/release.md` for the release contract and cut/verify checklist.
+
 ## Usage
 
 Provide config with exactly one of:
 
 - `--config-file <path>` (or `--config-file -` for stdin)
 - `--config '<inline YAML/JSON>'`
+
+### Version Information
+
+```sh
+# Print embedded build metadata
+secret-injector --version
+
+# Build with explicit metadata
+make build VERSION=v0.1.0 COMMIT=$(git rev-parse --short HEAD)
+```
+
+Release/static builds should always use `CGO_ENABLED=0` (the repository `Makefile` enforces this by default).
 
 ### Validate Configuration
 
@@ -160,7 +201,7 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry, nil)
 ### AWS Implementation
 
 - [x] Secrets Manager client (`secretsmanager:` prefix)
-- [ ] Parameter versioning support (`#version=X`)
+- [ ] Parameter versioning support (`#version=X`) (skipped for now)
 
 ### Advanced Features
 
@@ -182,7 +223,20 @@ secrets, err := loader.ResolveAll(ctx, cfg, registry, nil)
 - [ ] Prometheus metrics
 - [ ] Structured logging
 - [ ] Configuration hot-reload
-- [ ] GitHub Actions CI/CD pipeline
+
+### Release & Distribution (v1)
+
+- [x] Define release contract (SemVer tags `vX.Y.Z`, prerelease rules, supported OS/arch matrix)
+- [x] Add CLI build metadata (`version`, `commit`, `date`) exposed via `--version`
+- [x] Add CI workflow for `make fmt`, `make vet`, `make lint`, `make test`, and `make build`
+- [x] Add CI integration test job for `make itest` with Docker availability required (fail if Docker unavailable)
+- [x] Add CI Docker smoke tests (run image with `--version` and verify Docker `COPY --from` flow)
+- [x] Add GoReleaser config for binary artifacts (archives + checksums + changelog)
+- [x] Add GoReleaser Docker image publishing to GHCR (multi-arch: `linux/amd64`, `linux/arm64`)
+- [x] Add tag-triggered release workflow (`v*`) that publishes GitHub Release assets and GHCR images
+- [x] Document install paths: GitHub Releases and `go install`
+- [x] Document Docker copy-from usage for local development containers
+- [x] Add release runbook and first-cut checklist for `v0.1.0`
 
 ### Testing
 

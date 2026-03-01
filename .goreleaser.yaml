@@ -1,0 +1,80 @@
+version: 2
+
+project_name: secret-injector
+
+builds:
+  - id: secret-injector
+    main: ./cmd/secret-injector
+    binary: secret-injector
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .Date }}
+
+archives:
+  - id: binaries
+    ids:
+      - secret-injector
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  use: git
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+dockers:
+  - id: ghcr-amd64
+    ids:
+      - secret-injector
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    image_templates:
+      - ghcr.io/kahlstrm/secret-injector:{{ .Version }}-amd64
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/amd64
+      - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.revision={{ .Commit }}
+      - --label=org.opencontainers.image.created={{ .Date }}
+      - --label=org.opencontainers.image.source=https://github.com/kahlstrm/secret-injector
+
+  - id: ghcr-arm64
+    ids:
+      - secret-injector
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    image_templates:
+      - ghcr.io/kahlstrm/secret-injector:{{ .Version }}-arm64
+    use: buildx
+    build_flag_templates:
+      - --platform=linux/arm64
+      - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.revision={{ .Commit }}
+      - --label=org.opencontainers.image.created={{ .Date }}
+      - --label=org.opencontainers.image.source=https://github.com/kahlstrm/secret-injector
+
+docker_manifests:
+  - name_template: ghcr.io/kahlstrm/secret-injector:{{ .Version }}
+    image_templates:
+      - ghcr.io/kahlstrm/secret-injector:{{ .Version }}-amd64
+      - ghcr.io/kahlstrm/secret-injector:{{ .Version }}-arm64

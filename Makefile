@@ -9,6 +9,10 @@ BIN_NAME ?= secret-injector
 CMD_DIR ?= ./cmd/secret-injector
 PKG_ALL ?= ./...
 GOLANGCI_LINT ?= golangci-lint
+VERSION ?= dev
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS ?= -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
 help:
 	@echo "Targets:"
@@ -48,7 +52,7 @@ tidy:
 
 build: fmt vet
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BIN_DIR)/$(BIN_NAME) $(CMD_DIR)
+	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BIN_NAME) $(CMD_DIR)
 	@echo "Built $(BIN_DIR)/$(BIN_NAME)"
 
 itest:

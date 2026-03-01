@@ -19,6 +19,7 @@ type secretsManagerClient interface {
 	GetSecretValue(ctx context.Context, params *awssecretsmanager.GetSecretValueInput, optFns ...func(*awssecretsmanager.Options)) (*awssecretsmanager.GetSecretValueOutput, error)
 }
 
+// Loader resolves secrets from AWS Secrets Manager.
 type Loader struct {
 	source    string
 	client    secretsManagerClient
@@ -27,10 +28,12 @@ type Loader struct {
 
 const secretsManagerBatchMax = 20
 
+// NewLoader creates a secrets manager loader with an injected client.
 func NewLoader(source string, client secretsManagerClient, onWarning func(context.Context, string)) *Loader {
 	return &Loader{source: source, client: client, onWarning: onWarning}
 }
 
+// NewDefault creates a loader backed by the default AWS SDK configuration.
 func NewDefault(ctx context.Context, onWarning func(context.Context, string)) (*Loader, error) {
 	cfg, err := awscfg.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -40,8 +43,10 @@ func NewDefault(ctx context.Context, onWarning func(context.Context, string)) (*
 	return &Loader{source: "secretsmanager", client: client, onWarning: onWarning}, nil
 }
 
+// Source returns the loader source identifier.
 func (l *Loader) Source() string { return l.source }
 
+// Resolve resolves the requested secret refs.
 func (l *Loader) Resolve(ctx context.Context, refs []string) (map[string]string, error) {
 	unique := uniq.UniqueSorted(refs)
 
