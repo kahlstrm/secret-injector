@@ -13,6 +13,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/localstack"
 )
 
+const localStackImage = "localstack/localstack:4.14.0"
+
 // LocalStackContainer wraps a LocalStack testcontainer with helper methods.
 type LocalStackContainer struct {
 	*localstack.LocalStackContainer
@@ -21,7 +23,8 @@ type LocalStackContainer struct {
 // SetupLocalStack starts a LocalStack container with SSM and Secrets Manager enabled.
 // Returns an error if Docker is unavailable.
 func SetupLocalStack(ctx context.Context) (*LocalStackContainer, error) {
-	container, err := localstack.Run(ctx, "localstack/localstack:latest",
+	// Pin the latest community image explicitly because `latest` now requires auth.
+	container, err := localstack.Run(ctx, localStackImage,
 		testcontainers.WithEnv(map[string]string{
 			"SERVICES":           "ssm,secretsmanager",
 			"DEBUG":              "0",
