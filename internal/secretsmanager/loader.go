@@ -40,7 +40,7 @@ func NewDefault(ctx context.Context, onWarning func(context.Context, string)) (*
 		return nil, err
 	}
 	client := awssecretsmanager.NewFromConfig(cfg)
-	return &Loader{source: "secretsmanager", client: client, onWarning: onWarning}, nil
+	return &Loader{source: "aws_secretsmanager", client: client, onWarning: onWarning}, nil
 }
 
 // Source returns the loader source identifier.

@@ -17,7 +17,7 @@ type ssmClient interface {
 	GetParameter(ctx context.Context, params *awsssm.GetParameterInput, optFns ...func(*awsssm.Options)) (*awsssm.GetParameterOutput, error)
 }
 
-// Loader implements loader.SecretLoader for the "ssm" source.
+// Loader implements loader.SecretLoader for the "aws_ssm" source.
 // It prefers batched GetParameters and falls back to per-name GetParameter
 // when the batch call fails (e.g., due to permissions). If the fallback
 // succeeds, an optional onWarning callback is invoked.
@@ -38,14 +38,14 @@ func NewLoader(source string, client ssmClient, onWarning func(context.Context, 
 }
 
 // NewDefault uses AWS default configuration resolution and the standard
-// source label "ssm".
+// source label "aws_ssm".
 func NewDefault(ctx context.Context, onWarning func(context.Context, string)) (*Loader, error) {
 	cfg, err := awscfg.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 	client := awsssm.NewFromConfig(cfg)
-	return &Loader{source: "ssm", client: client, onWarning: onWarning}, nil
+	return &Loader{source: "aws_ssm", client: client, onWarning: onWarning}, nil
 }
 
 // Source returns the configured source name.

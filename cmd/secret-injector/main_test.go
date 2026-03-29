@@ -182,14 +182,14 @@ func TestValidateCmd_WithVarSubstitution(t *testing.T) {
 		return cmd.Run(context.Background(), []string{
 			"app",
 			"validate",
-			"--config", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+			"--config", `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`,
 			"--var", "STAGE=prod",
 			"--debug",
 		})
 	})
 
 	require.NoError(t, err)
-	assert.Contains(t, stdout, `"X": "ssm:/app/prod/db"`)
+	assert.Contains(t, stdout, `"X": "aws_ssm:/app/prod/db"`)
 	assert.Empty(t, stderr)
 }
 
@@ -200,7 +200,7 @@ func TestValidateCmd_AllowsUnusedVar(t *testing.T) {
 		return cmd.Run(context.Background(), []string{
 			"app",
 			"validate",
-			"--config", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+			"--config", `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`,
 			"--var", "STAGE=prod",
 			"--var", "EXTRA=value",
 		})
@@ -217,7 +217,7 @@ func TestValidateCmd_MissingVarFails(t *testing.T) {
 	err := cmd.Run(context.Background(), []string{
 		"app",
 		"validate",
-		"--config", `{"secrets":{"X":"ssm:/app/{{.STAGE}}/db"}}`,
+		"--config", `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`,
 	})
 
 	require.Error(t, err)
@@ -245,7 +245,7 @@ func TestValidateCmd_ConfigFile(t *testing.T) {
 	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	err := os.WriteFile(configPath, []byte("secrets:\n  X: ssm:/app/{{.STAGE}}/db\n"), 0o600)
+	err := os.WriteFile(configPath, []byte("secrets:\n  X: aws_ssm:/app/{{.STAGE}}/db\n"), 0o600)
 	require.NoError(t, err)
 
 	stdout, stderr, runErr := captureOutput(t, func() error {
@@ -259,7 +259,7 @@ func TestValidateCmd_ConfigFile(t *testing.T) {
 	})
 
 	require.NoError(t, runErr)
-	assert.Contains(t, stdout, `"X": "ssm:/app/prod/db"`)
+	assert.Contains(t, stdout, `"X": "aws_ssm:/app/prod/db"`)
 	assert.Empty(t, stderr)
 }
 
@@ -268,7 +268,7 @@ func TestValidateCmd_ConfigFileStdin(t *testing.T) {
 
 	stdinR, stdinW, err := os.Pipe()
 	require.NoError(t, err)
-	_, err = stdinW.WriteString("secrets:\n  X: ssm:/app/{{.STAGE}}/db\n")
+	_, err = stdinW.WriteString("secrets:\n  X: aws_ssm:/app/{{.STAGE}}/db\n")
 	require.NoError(t, err)
 	require.NoError(t, stdinW.Close())
 
@@ -292,7 +292,7 @@ func TestValidateCmd_ConfigFileStdin(t *testing.T) {
 	})
 
 	require.NoError(t, runErr)
-	assert.Contains(t, stdout, `"X": "ssm:/app/prod/db"`)
+	assert.Contains(t, stdout, `"X": "aws_ssm:/app/prod/db"`)
 	assert.Empty(t, stderr)
 }
 
@@ -308,7 +308,7 @@ func TestValidateCmd_RejectsConfigAndConfigFileTogether(t *testing.T) {
 	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	err := os.WriteFile(configPath, []byte("secrets:\n  X: ssm:/app/db\n"), 0o600)
+	err := os.WriteFile(configPath, []byte("secrets:\n  X: aws_ssm:/app/db\n"), 0o600)
 	require.NoError(t, err)
 
 	err = cmd.Run(context.Background(), []string{
@@ -327,7 +327,7 @@ func TestExecCmd_NoCommand(t *testing.T) {
 	}
 
 	// exec with config but no command should error
-	err := cmd.Run(context.Background(), []string{"app", "exec", "--config", `{"FOO":"ssm:/test"}`})
+	err := cmd.Run(context.Background(), []string{"app", "exec", "--config", `{"FOO":"aws_ssm:/test"}`})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no command specified")
 }
@@ -374,11 +374,9 @@ func TestExecCmd_InheritsEnv(t *testing.T) {
 	out, err := buildCmd.CombinedOutput()
 	require.NoError(t, err, "build failed: %s", string(out))
 
-	// Run exec and verify it inherits environment
-	runCmd := exec.Command(binary, "exec", "--config", `{"secrets":{}}`, "--", "printenv", "TEST_INHERIT_VAR")
+	// Run exec and verify it inherits environment.
+	runCmd := exec.Command(binary, "exec", "--config", `{"secrets":{}}`, "--", "/bin/sh", "-c", `printf '%s\n' "$TEST_INHERIT_VAR"`)
 	runCmd.Env = append(runCmd.Env, "TEST_INHERIT_VAR=inherited_value")
-	// Need PATH for printenv to work
-	runCmd.Env = append(runCmd.Env, "PATH=/usr/bin:/bin")
 	var stdout, stderr bytes.Buffer
 	runCmd.Stdout = &stdout
 	runCmd.Stderr = &stderr

@@ -61,9 +61,9 @@ func ParseValue(s string) (Entry, error) {
 	}
 
 	switch source {
-	case "ssm", "secretsmanager":
+	case "aws_ssm", "aws_secretsmanager":
 	default:
-		return Entry{}, fmt.Errorf("unsupported source %q: supported sources are 'ssm' and 'secretsmanager'", source)
+		return Entry{}, fmt.Errorf("unsupported source %q: supported sources are 'aws_ssm' and 'aws_secretsmanager'", source)
 	}
 
 	return Entry{Source: source, Ref: ref}, nil

@@ -1,4 +1,4 @@
 secrets:
-  DATABASE_PASSWORD: ssm:/app/prod/db/password
-  REDIS_PASSWORD: ssm:/app/prod/cache:password
-  API_TOKEN: ssm:/services/payments/prod/api/token
+  DATABASE_PASSWORD: aws_ssm:/app/prod/db/password
+  REDIS_PASSWORD: aws_ssm:/app/prod/cache:password
+  API_TOKEN: aws_ssm:/services/payments/prod/api/token

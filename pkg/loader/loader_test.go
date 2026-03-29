@@ -31,16 +31,16 @@ func (f *fakeLoader) Resolve(_ context.Context, refs []string) (map[string]strin
 
 func TestResolveAll_GroupsBySourceAndCallsOnce(t *testing.T) {
 	cfg := cfgpkg.Config{Secrets: cfgpkg.Secrets{
-		"A": {Source: "ssm", Ref: "/p1"}, // duplicate ref in same source
-		"B": {Source: "ssm", Ref: "/p1"},
-		"C": {Source: "ssm", Ref: "/p2"},
-		"D": {Source: "sm", Ref: "/k1"}, // different source
-		"E": {Source: "sm", Ref: "/k2"},
+		"A": {Source: "aws_ssm", Ref: "/p1"}, // duplicate ref in same source
+		"B": {Source: "aws_ssm", Ref: "/p1"},
+		"C": {Source: "aws_ssm", Ref: "/p2"},
+		"D": {Source: "aws_secretsmanager", Ref: "/k1"}, // different source
+		"E": {Source: "aws_secretsmanager", Ref: "/k2"},
 	}}
 
-	ssm := &fakeLoader{source: "ssm", result: map[string]string{"/p1": "v1", "/p2": "v2"}}
-	sm := &fakeLoader{source: "sm", result: map[string]string{"/k1": "x1", "/k2": "x2"}}
-	reg := Registry{"ssm": ssm, "sm": sm}
+	ssm := &fakeLoader{source: "aws_ssm", result: map[string]string{"/p1": "v1", "/p2": "v2"}}
+	sm := &fakeLoader{source: "aws_secretsmanager", result: map[string]string{"/k1": "x1", "/k2": "x2"}}
+	reg := Registry{"aws_ssm": ssm, "aws_secretsmanager": sm}
 
 	out, err := ResolveAll(context.Background(), cfg, reg, nil)
 	require.NoError(t, err)
@@ -53,8 +53,8 @@ func TestResolveAll_GroupsBySourceAndCallsOnce(t *testing.T) {
 	assert.Equal(t, "x2", out["E"])
 
 	// Resolve is called exactly once per source with deduped refs
-	require.Len(t, ssm.resolvedArgs, 1, "ssm Resolve should be called once")
-	require.Len(t, sm.resolvedArgs, 1, "sm Resolve should be called once")
+	require.Len(t, ssm.resolvedArgs, 1, "aws_ssm Resolve should be called once")
+	require.Len(t, sm.resolvedArgs, 1, "aws_secretsmanager Resolve should be called once")
 
 	assert.ElementsMatch(t, []string{"/p1", "/p2"}, ssm.resolvedArgs[0])
 	assert.ElementsMatch(t, []string{"/k1", "/k2"}, sm.resolvedArgs[0])
@@ -75,28 +75,28 @@ func TestResolveAll_UnknownSource(t *testing.T) {
 
 func TestResolveAll_ErrorOnMissingRequiredValues(t *testing.T) {
 	cfg := cfgpkg.Config{Secrets: cfgpkg.Secrets{
-		"A": {Source: "ssm", Ref: "/missing-a"},
-		"B": {Source: "ssm", Ref: "/missing-b"},
+		"A": {Source: "aws_ssm", Ref: "/missing-a"},
+		"B": {Source: "aws_ssm", Ref: "/missing-b"},
 	}}
 
-	ssm := &fakeLoader{source: "ssm", result: map[string]string{}}
-	reg := Registry{"ssm": ssm}
+	ssm := &fakeLoader{source: "aws_ssm", result: map[string]string{}}
+	reg := Registry{"aws_ssm": ssm}
 
 	_, err := ResolveAll(context.Background(), cfg, reg, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing required secrets")
-	assert.Contains(t, err.Error(), "env \"A\" (source \"ssm\", ref \"/missing-a\")")
-	assert.Contains(t, err.Error(), "env \"B\" (source \"ssm\", ref \"/missing-b\")")
+	assert.Contains(t, err.Error(), "env \"A\" (source \"aws_ssm\", ref \"/missing-a\")")
+	assert.Contains(t, err.Error(), "env \"B\" (source \"aws_ssm\", ref \"/missing-b\")")
 }
 
 func TestResolveAll_MissingOptionalWarnsAndContinues(t *testing.T) {
 	cfg := cfgpkg.Config{Secrets: cfgpkg.Secrets{
-		"OPTIONAL": {Source: "ssm", Ref: "/missing", Optional: true},
-		"REQ":      {Source: "ssm", Ref: "/ok"},
+		"OPTIONAL": {Source: "aws_ssm", Ref: "/missing", Optional: true},
+		"REQ":      {Source: "aws_ssm", Ref: "/ok"},
 	}}
 
-	ssm := &fakeLoader{source: "ssm", result: map[string]string{"/ok": "value"}}
-	reg := Registry{"ssm": ssm}
+	ssm := &fakeLoader{source: "aws_ssm", result: map[string]string{"/ok": "value"}}
+	reg := Registry{"aws_ssm": ssm}
 
 	var warnings []string
 	warn := func(_ context.Context, msg string) { warnings = append(warnings, msg) }

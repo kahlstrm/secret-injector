@@ -62,7 +62,7 @@ func TestSSMLoader_BatchChunkingSizes(t *testing.T) {
 	}
 
 	fake := &fakeSSMClient{values: values}
-	l := NewLoader("ssm", fake, nil)
+	l := NewLoader("aws_ssm", fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestSSMLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T) {
 
 	var warnings []string
 	warn := func(_ context.Context, msg string) { warnings = append(warnings, msg) }
-	l := NewLoader("ssm", fake, warn)
+	l := NewLoader("aws_ssm", fake, warn)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -104,7 +104,7 @@ func TestSSMLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T) {
 func TestSSMLoader_BatchSuccessButMissingValue(t *testing.T) {
 	refs := []string{"/present", "/missing"}
 	fake := &fakeSSMClient{values: map[string]string{"/present": "x"}}
-	l := NewLoader("ssm", fake, nil)
+	l := NewLoader("aws_ssm", fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)

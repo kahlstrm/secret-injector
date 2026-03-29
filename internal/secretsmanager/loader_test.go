@@ -99,7 +99,7 @@ func TestSecretsManagerLoader_BatchChunkingSizes(t *testing.T) {
 	}
 
 	fake := &fakeSecretsManagerClient{values: values}
-	l := NewLoader("secretsmanager", fake, nil)
+	l := NewLoader("aws_secretsmanager", fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestSecretsManagerLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T
 
 	var warnings []string
 	warn := func(_ context.Context, msg string) { warnings = append(warnings, msg) }
-	l := NewLoader("secretsmanager", fake, warn)
+	l := NewLoader("aws_secretsmanager", fake, warn)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -134,7 +134,7 @@ func TestSecretsManagerLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T
 func TestSecretsManagerLoader_BatchSuccessButMissingValue(t *testing.T) {
 	refs := []string{"present", "missing"}
 	fake := &fakeSecretsManagerClient{values: map[string]string{"present": "x"}}
-	l := NewLoader("secretsmanager", fake, nil)
+	l := NewLoader("aws_secretsmanager", fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestSecretsManagerLoader_BatchItemErrorFails(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		batchItemCodes: map[string]string{"forbidden": "AccessDeniedException"},
 	}
-	l := NewLoader("secretsmanager", fake, nil)
+	l := NewLoader("aws_secretsmanager", fake, nil)
 
 	_, err := l.Resolve(context.Background(), []string{"forbidden"})
 	require.Error(t, err)
@@ -156,7 +156,7 @@ func TestSecretsManagerLoader_BinaryValueFails(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		binaryValues: map[string][]byte{"binary": {0x01, 0x02}},
 	}
-	l := NewLoader("secretsmanager", fake, nil)
+	l := NewLoader("aws_secretsmanager", fake, nil)
 
 	_, err := l.Resolve(context.Background(), []string{"binary"})
 	require.Error(t, err)
@@ -168,7 +168,7 @@ func TestSecretsManagerLoader_FallbackFailureReturnsError(t *testing.T) {
 		batchErr:  errors.New("batch unavailable"),
 		getErrors: map[string]error{"a": errors.New("boom")},
 	}
-	l := NewLoader("secretsmanager", fake, nil)
+	l := NewLoader("aws_secretsmanager", fake, nil)
 
 	_, err := l.Resolve(context.Background(), []string{"a"})
 	require.Error(t, err)

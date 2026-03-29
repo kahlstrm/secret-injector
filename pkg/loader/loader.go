@@ -10,11 +10,11 @@ import (
 	cfgpkg "github.com/kahlstrm/secret-injector/pkg/config"
 )
 
-// SecretLoader resolves secret references for a specific source (e.g., "ssm").
+// SecretLoader resolves secret references for a specific source (e.g., "aws_ssm").
 // Implementations should prefer efficient batch retrieval and may internally
 // fall back to per-item requests when batch operations are not permitted.
 type SecretLoader interface {
-	// Source returns the source key this loader supports (e.g., "ssm").
+	// Source returns the source key this loader supports (e.g., "aws_ssm").
 	Source() string
 
 	// Resolve takes one or more refs and returns a map of ref -> value.

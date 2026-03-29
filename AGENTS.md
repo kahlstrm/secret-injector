@@ -128,7 +128,7 @@ func TestParseValue(t *testing.T) {
         want    Entry
         wantErr bool
     }{
-        {name: "valid ssm", input: "ssm:/path/to/secret", want: Entry{Source: "ssm", Ref: "/path/to/secret"}},
+        {name: "valid ssm", input: "aws_ssm:/path/to/secret", want: Entry{Source: "aws_ssm", Ref: "/path/to/secret"}},
         {name: "empty input", input: "", wantErr: true},
     }
     for _, tt := range tests {
