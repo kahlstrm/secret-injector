@@ -35,7 +35,7 @@ func TestIntegration_SSMLoaderWithLocalstack(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	l := NewLoader("aws_ssm", client, nil)
+	l := NewFromAWSConfig(cfg, nil)
 	vals, err := l.Resolve(ctx, []string{"/it/p1", "/it/p2"})
 	require.NoError(t, err)
 	require.Equal(t, "v1", vals["/it/p1"])

@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	awssecretsmanager "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	smtypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/aws/smithy-go"
@@ -33,14 +32,9 @@ func NewLoader(source string, client secretsManagerClient, onWarning func(contex
 	return &Loader{source: source, client: client, onWarning: onWarning}
 }
 
-// NewDefault creates a loader backed by the default AWS SDK configuration.
-func NewDefault(ctx context.Context, onWarning func(context.Context, string)) (*Loader, error) {
-	cfg, err := awscfg.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	client := awssecretsmanager.NewFromConfig(cfg)
-	return &Loader{source: "aws_secretsmanager", client: client, onWarning: onWarning}, nil
+// NewFromAWSConfig constructs a secrets manager loader from shared AWS SDK config.
+func NewFromAWSConfig(cfg aws.Config, onWarning func(context.Context, string)) *Loader {
+	return &Loader{source: "aws_secretsmanager", client: awssecretsmanager.NewFromConfig(cfg), onWarning: onWarning}
 }
 
 // Source returns the loader source identifier.

@@ -14,8 +14,10 @@ secret-injector/
 │   ├── loader/            # SecretLoader interface and registry
 │   └── util/              # Small utility packages
 ├── internal/              # Private implementation details
-│   ├── secretsmanager/    # AWS Secrets Manager loader implementation
-│   ├── ssm/               # AWS SSM loader implementation
+│   ├── aws/               # Shared AWS internals and service loaders
+│   │   ├── config/        # Shared AWS SDK config loading
+│   │   ├── secretsmanager/# AWS Secrets Manager loader implementation
+│   │   └── ssm/           # AWS SSM loader implementation
 │   └── testutil/          # Test helpers (localstack setup)
 ├── examples/              # Sample configurations and demos
 └── bin/                   # Build output directory
@@ -68,7 +70,7 @@ Imports must be grouped: (1) stdlib, (2) external deps, (3) internal packages. U
 | Packages | short, lowercase | `loader`, `config`, `ssm` |
 | Exported | PascalCase | `SecretLoader`, `ResolveAll` |
 | Unexported | camelCase | `ssmClient`, `loadConfigFromInput` |
-| Constructors | `NewType(...)` | `NewLoader(...)`, `NewDefault(...)` |
+| Constructors | `NewType(...)` | `NewLoader(...)`, `NewFromAWSConfig(...)` |
 | Sentinel errors | `var ErrX = errors.New(...)` | `var ErrUnknownSource = ...` |
 | CLI flags | kebab-case | `--config-file`, `--config` |
 | Env vars | UPPER_SNAKE_CASE | `AWS_REGION`, `CGO_ENABLED` |
@@ -168,7 +170,7 @@ func (f *fakeLoader) Resolve(_ context.Context, refs []string) (map[string]strin
 
 ### Coverage
 
-Target ≥80% in core packages (`pkg/loader`, `pkg/config`, `internal/ssm`).
+Target ≥80% in core packages (`pkg/loader`, `pkg/config`, `internal/aws/ssm`).
 
 ## Commit & Pull Request Guidelines
 

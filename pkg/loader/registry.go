@@ -3,8 +3,10 @@ package loader
 import (
 	"context"
 
-	secretsmanager "github.com/kahlstrm/secret-injector/internal/secretsmanager"
-	ssm "github.com/kahlstrm/secret-injector/internal/ssm"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/kahlstrm/secret-injector/internal/aws/config"
+	secretsmanager "github.com/kahlstrm/secret-injector/internal/aws/secretsmanager"
+	ssm "github.com/kahlstrm/secret-injector/internal/aws/ssm"
 )
 
 // Registry maps a source name to its loader.
@@ -28,17 +30,20 @@ func (r Registry) Register(l SecretLoader) {
 }
 
 // Default returns a Registry with the built-in SSM and Secrets Manager loaders
-// using AWS default credential and region resolution.
+// using shared AWS default credential and region resolution.
 // onWarning is optional and can be nil.
 func Default(ctx context.Context, onWarning func(context.Context, string)) (Registry, error) {
-	s, err := ssm.NewDefault(ctx, onWarning)
-	if err != nil {
-		return nil, err
-	}
-	sm, err := secretsmanager.NewDefault(ctx, onWarning)
+	cfg, err := awsconfig.LoadDefault(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return New(s, sm), nil
+	return defaultRegistry(cfg, onWarning), nil
+}
+
+func defaultRegistry(cfg aws.Config, onWarning func(context.Context, string)) Registry {
+	return New(
+		ssm.NewFromAWSConfig(cfg, onWarning),
+		secretsmanager.NewFromAWSConfig(cfg, onWarning),
+	)
 }

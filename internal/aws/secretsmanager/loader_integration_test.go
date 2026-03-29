@@ -30,7 +30,7 @@ func TestIntegration_SecretsManagerLoaderWithLocalstack(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	l := NewLoader("aws_secretsmanager", client, nil)
+	l := NewFromAWSConfig(cfg, nil)
 	vals, err := l.Resolve(ctx, []string{"it-sm-p1", "it-sm-p2"})
 	require.NoError(t, err)
 	require.Equal(t, "v1", vals["it-sm-p1"])

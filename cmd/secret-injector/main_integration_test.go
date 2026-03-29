@@ -247,6 +247,42 @@ func TestIntegration_FetchWithSecretsManager(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
+func TestIntegration_FetchWithMixedAWSBackends(t *testing.T) {
+	ctx := context.Background()
+	cfg := testLS.MustAWSConfig(t, ctx)
+	ssmClient := awsssm.NewFromConfig(cfg)
+	smClient := awssecretsmanager.NewFromConfig(cfg)
+	endpoint := testLS.MustEndpoint(t, ctx)
+
+	seedParameter(t, ctx, ssmClient, "/fetch-mixed/db-password", "ssm-secret")
+	_, err := smClient.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
+		Name:         aws.String("fetch-mixed-api-key"),
+		SecretString: aws.String("sm-secret"),
+	})
+	require.NoError(t, err)
+
+	binary := buildBinary(t)
+
+	configJSON := `{"secrets":{"DB_PASSWORD":"aws_ssm:/fetch-mixed/db-password","API_KEY":"aws_secretsmanager:fetch-mixed-api-key"}}`
+
+	cmd := exec.Command(binary, "fetch", "--config", configJSON)
+	cmd.Env = []string{
+		"AWS_ACCESS_KEY_ID=test",
+		"AWS_SECRET_ACCESS_KEY=test",
+		"AWS_REGION=us-east-1",
+		"AWS_ENDPOINT_URL=" + endpoint,
+		"PATH=/usr/bin:/bin",
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	require.NoError(t, err, "fetch failed: stderr=%s", stderr.String())
+	assert.Equal(t, "API_KEY=sm-secret\nDB_PASSWORD=ssm-secret\n", stdout.String())
+	assert.Empty(t, stderr.String())
+}
+
 func TestIntegration_ExecWithTemplateRefs(t *testing.T) {
 	ctx := context.Background()
 	cfg := testLS.MustAWSConfig(t, ctx)

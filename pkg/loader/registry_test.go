@@ -4,10 +4,18 @@ import (
 	"context"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	cfgpkg "github.com/kahlstrm/secret-injector/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDefaultRegistry_RegistersBuiltInAWSLoaders(t *testing.T) {
+	reg := defaultRegistry(aws.Config{}, nil)
+	require.Len(t, reg, 2)
+	assert.Equal(t, "aws_ssm", reg["aws_ssm"].Source())
+	assert.Equal(t, "aws_secretsmanager", reg["aws_secretsmanager"].Source())
+}
 
 func TestRegistry_New_AndResolve(t *testing.T) {
 	ssm := &fakeLoader{source: "aws_ssm", result: map[string]string{"/a": "va"}}

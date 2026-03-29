@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/kahlstrm/secret-injector/pkg/util/uniq"
 )
@@ -37,15 +36,9 @@ func NewLoader(source string, client ssmClient, onWarning func(context.Context, 
 	return &Loader{source: source, client: client, onWarning: onWarning}
 }
 
-// NewDefault uses AWS default configuration resolution and the standard
-// source label "aws_ssm".
-func NewDefault(ctx context.Context, onWarning func(context.Context, string)) (*Loader, error) {
-	cfg, err := awscfg.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	client := awsssm.NewFromConfig(cfg)
-	return &Loader{source: "aws_ssm", client: client, onWarning: onWarning}, nil
+// NewFromAWSConfig constructs an SSM loader from shared AWS SDK config.
+func NewFromAWSConfig(cfg aws.Config, onWarning func(context.Context, string)) *Loader {
+	return &Loader{source: "aws_ssm", client: awsssm.NewFromConfig(cfg), onWarning: onWarning}
 }
 
 // Source returns the configured source name.
