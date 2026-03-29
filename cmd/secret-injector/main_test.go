@@ -224,6 +224,19 @@ func TestValidateCmd_MissingVarFails(t *testing.T) {
 	assert.Contains(t, err.Error(), `map has no entry for key "STAGE"`)
 }
 
+func TestValidateCmd_UnknownSourceFails(t *testing.T) {
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	err := cmd.Run(context.Background(), []string{
+		"app",
+		"validate",
+		"--config", `{"secrets":{"X":"custom:/app/db"}}`,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported source")
+}
+
 func TestFetchCmd_AllowsUnusedVar(t *testing.T) {
 	cmd := &cli.Command{Commands: []*cli.Command{fetchCmd()}}
 

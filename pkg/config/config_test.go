@@ -17,6 +17,8 @@ func TestParseValue_Valid(t *testing.T) {
 	}{
 		{name: "simple", in: "aws_ssm:/app/db/password", source: "aws_ssm", ref: "/app/db/password"},
 		{name: "secrets manager source", in: "aws_secretsmanager:my/service/secret", source: "aws_secretsmanager", ref: "my/service/secret"},
+		{name: "custom source", in: "custom_provider:/path/to/secret", source: "custom_provider", ref: "/path/to/secret"},
+		{name: "legacy source name now syntax-valid", in: "ssm:/x", source: "ssm", ref: "/x"},
 		{name: "trim spaces", in: " aws_ssm : /with/spaces ", source: "aws_ssm", ref: "/with/spaces"},
 		{name: "source lowercase", in: "AWS_SSM:/UpperCaseSource", source: "aws_ssm", ref: "/UpperCaseSource"},
 		{name: "ref contains colon", in: "aws_ssm:/contains:colon", source: "aws_ssm", ref: "/contains:colon"},
@@ -41,9 +43,9 @@ func TestParseValue_Invalid(t *testing.T) {
 		{name: "missing colon", in: "no-colon"},
 		{name: "empty source", in: ":ref-only"},
 		{name: "empty ref", in: "aws_ssm:"},
-		{name: "legacy ssm source", in: "ssm:/x"},
-		{name: "legacy secrets manager source", in: "secretsmanager:/x"},
-		{name: "unsupported source", in: " smm : /x"},
+		{name: "source starts with digit", in: "1custom:/x"},
+		{name: "source contains dash", in: "custom-provider:/x"},
+		{name: "source contains space", in: "custom provider:/x"},
 	}
 
 	for _, tt := range tests {
@@ -102,6 +104,19 @@ func TestLoad_Valid_SecretsManager(t *testing.T) {
 	assert.Equal(t, "my/service/token", cfg.Secrets["API_TOKEN"].Ref)
 }
 
+func TestLoad_WithSourceValidator_AllowsCustomSource(t *testing.T) {
+	jsonStr := `{
+        "secrets": {
+            "API_TOKEN": "custom_provider:my/service/token"
+        }
+    }`
+	cfg, err := Load(strings.NewReader(jsonStr), WithSourceValidator(func(string) error { return nil }))
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Secrets)
+	assert.Equal(t, "custom_provider", cfg.Secrets["API_TOKEN"].Source)
+	assert.Equal(t, "my/service/token", cfg.Secrets["API_TOKEN"].Ref)
+}
+
 func TestLoad_Errors_YAML(t *testing.T) {
 	t.Run("unknown field", func(t *testing.T) {
 		_, err := Load(strings.NewReader("secrets: {}\nextra: 1\n"))
@@ -125,7 +140,8 @@ func TestLoad_Errors(t *testing.T) {
 		{name: "value not a string", json: `{"secrets": {"X": {}}}`},
 		{name: "legacy ssm source surfaced", json: `{"secrets": {"X": "ssm:/x"}}`, errContains: "unsupported source"},
 		{name: "legacy secrets manager source surfaced", json: `{"secrets": {"X": "secretsmanager:x"}}`, errContains: "unsupported source"},
-		{name: "unsupported source surfaced", json: `{"secrets": {"X": "sm:/x"}}`},
+		{name: "unsupported source surfaced", json: `{"secrets": {"X": "sm:/x"}}`, errContains: "unsupported source"},
+		{name: "invalid source surfaced", json: `{"secrets": {"X": "custom-provider:/x"}}`, errContains: "invalid source"},
 		{name: "optional references unknown secret", json: `{"secrets": {"X": "aws_ssm:/x"}, "optional": ["MISSING"]}`, errContains: "not defined in secrets"},
 		{name: "optional contains duplicates", json: `{"secrets": {"X": "aws_ssm:/x"}, "optional": ["X", "X"]}`, errContains: "duplicate optional"},
 		{name: "optional contains empty value", json: `{"secrets": {"X": "aws_ssm:/x"}, "optional": [""]}`, errContains: "empty environment variable"},

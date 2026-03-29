@@ -18,30 +18,26 @@ type secretsManagerClient interface {
 	GetSecretValue(ctx context.Context, params *awssecretsmanager.GetSecretValueInput, optFns ...func(*awssecretsmanager.Options)) (*awssecretsmanager.GetSecretValueOutput, error)
 }
 
-// Loader resolves secrets from AWS Secrets Manager.
-type Loader struct {
-	source    string
+// Resolver resolves secrets from AWS Secrets Manager.
+type Resolver struct {
 	client    secretsManagerClient
 	onWarning func(context.Context, string)
 }
 
 const secretsManagerBatchMax = 20
 
-// NewLoader creates a secrets manager loader with an injected client.
-func NewLoader(source string, client secretsManagerClient, onWarning func(context.Context, string)) *Loader {
-	return &Loader{source: source, client: client, onWarning: onWarning}
+// NewResolver creates a secrets manager resolver with an injected client.
+func NewResolver(client secretsManagerClient, onWarning func(context.Context, string)) *Resolver {
+	return &Resolver{client: client, onWarning: onWarning}
 }
 
-// NewFromAWSConfig constructs a secrets manager loader from shared AWS SDK config.
-func NewFromAWSConfig(cfg aws.Config, onWarning func(context.Context, string)) *Loader {
-	return &Loader{source: "aws_secretsmanager", client: awssecretsmanager.NewFromConfig(cfg), onWarning: onWarning}
+// NewResolverFromAWSConfig constructs a secrets manager resolver from shared AWS SDK config.
+func NewResolverFromAWSConfig(cfg aws.Config, onWarning func(context.Context, string)) *Resolver {
+	return &Resolver{client: awssecretsmanager.NewFromConfig(cfg), onWarning: onWarning}
 }
-
-// Source returns the loader source identifier.
-func (l *Loader) Source() string { return l.source }
 
 // Resolve resolves the requested secret refs.
-func (l *Loader) Resolve(ctx context.Context, refs []string) (map[string]string, error) {
+func (l *Resolver) Resolve(ctx context.Context, refs []string) (map[string]string, error) {
 	unique := uniq.UniqueSorted(refs)
 
 	values := make(map[string]string, len(unique))

@@ -86,11 +86,8 @@ func fetchCmd() *cli.Command {
 				return fmt.Errorf("unknown format %q: must be env, json, or export", format)
 			}
 
-			reg, err := loader.Default(ctx, warnToStderr)
-			if err != nil {
-				return err
-			}
-			values, err := loader.ResolveAll(ctx, cfg, reg, warnToStderr)
+			reg := loader.Default(warnToStderr)
+			values, err := reg.ResolveAll(ctx, cfg)
 			if err != nil {
 				return err
 			}
@@ -135,11 +132,8 @@ func execCmd() *cli.Command {
 				return err
 			}
 
-			reg, err := loader.Default(ctx, warnToStderr)
-			if err != nil {
-				return err
-			}
-			secrets, err := loader.ResolveAll(ctx, cfg, reg, warnToStderr)
+			reg := loader.Default(warnToStderr)
+			secrets, err := reg.ResolveAll(ctx, cfg)
 			if err != nil {
 				return err
 			}
@@ -175,6 +169,9 @@ func validateCmd() *cli.Command {
 		Action: func(ctx context.Context, c *cli.Command) error {
 			cfg, err := loadConfigFromInput(c)
 			if err != nil {
+				return err
+			}
+			if err := loader.Default(warnToStderr).Validate(cfg); err != nil {
 				return err
 			}
 			if c.Bool("debug") {

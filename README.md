@@ -183,11 +183,8 @@ cfg, err := config.Load(
 if err != nil {
     return err
 }
-registry, err := loader.Default(ctx, nil)
-if err != nil {
-    return err
-}
-secrets, err := loader.ResolveAll(ctx, cfg, registry, nil)
+registry := loader.Default(nil)
+secrets, err := registry.ResolveAll(ctx, cfg)
 ```
 
 ## TODO

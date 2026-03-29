@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIntegration_SSMLoaderWithLocalstack(t *testing.T) {
+func TestIntegration_SSMResolverWithLocalstack(t *testing.T) {
 	ctx := context.Background()
 	ls := testutil.MustSetupLocalStack(t, ctx)
 	cfg := ls.MustAWSConfig(t, ctx)
@@ -35,7 +35,7 @@ func TestIntegration_SSMLoaderWithLocalstack(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	l := NewFromAWSConfig(cfg, nil)
+	l := NewResolverFromAWSConfig(cfg, nil)
 	vals, err := l.Resolve(ctx, []string{"/it/p1", "/it/p2"})
 	require.NoError(t, err)
 	require.Equal(t, "v1", vals["/it/p1"])

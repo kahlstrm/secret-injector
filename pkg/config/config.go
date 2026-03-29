@@ -28,7 +28,9 @@ type Config struct {
 }
 
 type loadOptions struct {
-	vars map[string]string
+	vars               map[string]string
+	sourceValidator    func(string) error
+	hasSourceValidator bool
 }
 
 // LoadOption configures optional behavior for Load.
@@ -41,6 +43,15 @@ func WithVars(vars map[string]string) LoadOption {
 		for k, v := range vars {
 			o.vars[k] = v
 		}
+	}
+}
+
+// WithSourceValidator overrides the source validation used by Load.
+// Passing nil disables source membership validation.
+func WithSourceValidator(validator func(string) error) LoadOption {
+	return func(o *loadOptions) {
+		o.sourceValidator = validator
+		o.hasSourceValidator = true
 	}
 }
 
@@ -60,13 +71,24 @@ func ParseValue(s string) (Entry, error) {
 		return Entry{}, errors.New("invalid secret value: empty source or ref")
 	}
 
-	switch source {
-	case "aws_ssm", "aws_secretsmanager":
-	default:
-		return Entry{}, fmt.Errorf("unsupported source %q: supported sources are 'aws_ssm' and 'aws_secretsmanager'", source)
+	if !isValidSource(source) {
+		return Entry{}, fmt.Errorf("invalid source %q: expected lowercase letters, digits, and underscores", source)
 	}
 
 	return Entry{Source: source, Ref: ref}, nil
+}
+
+func isValidSource(source string) bool {
+	for i, r := range source {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case i > 0 && r >= '0' && r <= '9':
+		case i > 0 && r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // UnmarshalJSON allows Entry to be represented as a single JSON string
@@ -109,6 +131,9 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 			opt(&options)
 		}
 	}
+	if !options.hasSourceValidator {
+		options.sourceValidator = defaultSourceValidator
+	}
 
 	var cfg Config
 	dec := yaml.NewDecoder(r)
@@ -121,6 +146,12 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 	}
 
 	for env, entry := range cfg.Secrets {
+		if options.sourceValidator != nil {
+			if err := options.sourceValidator(entry.Source); err != nil {
+				return Config{}, err
+			}
+		}
+
 		ref, err := expandRef(entry.Ref, options.vars)
 		if err != nil {
 			return Config{}, err
@@ -148,6 +179,15 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func defaultSourceValidator(source string) error {
+	switch source {
+	case "aws_ssm", "aws_secretsmanager":
+		return nil
+	default:
+		return fmt.Errorf("unsupported source %q: supported sources are 'aws_ssm' and 'aws_secretsmanager'", source)
+	}
 }
 
 func expandRef(ref string, vars map[string]string) (string, error) {

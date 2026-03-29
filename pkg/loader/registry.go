@@ -5,45 +5,69 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/kahlstrm/secret-injector/internal/aws/config"
-	secretsmanager "github.com/kahlstrm/secret-injector/internal/aws/secretsmanager"
-	ssm "github.com/kahlstrm/secret-injector/internal/aws/ssm"
+	awssecretsmanager "github.com/kahlstrm/secret-injector/internal/aws/secretsmanager"
+	awsssm "github.com/kahlstrm/secret-injector/internal/aws/ssm"
 )
 
-// Registry maps a source name to its loader.
-type Registry map[string]SecretLoader
-
-// New creates a Registry from the provided loaders.
-func New(loaders ...SecretLoader) Registry {
-	r := make(Registry, len(loaders))
-	for _, l := range loaders {
-		r.Register(l)
+// New creates a registry from the provided providers.
+// Later providers replace earlier providers with the same Source.
+func New(onWarning WarningHandler, providers ...Provider) *Registry {
+	r := &Registry{
+		onWarning: onWarning,
+		providers: make(map[string]Provider, len(providers)),
+		resolvers: make(map[string]Resolver, len(providers)),
+	}
+	for _, provider := range providers {
+		if provider == nil {
+			continue
+		}
+		r.providers[provider.Source()] = provider
 	}
 	return r
 }
 
-// Register adds or replaces a loader for its Source key.
-func (r Registry) Register(l SecretLoader) {
-	if l == nil {
-		return
-	}
-	r[l.Source()] = l
+// Default creates a registry containing the built-in providers plus any extras.
+// Extras replace built-ins when they use the same source.
+func Default(onWarning WarningHandler, extra ...Provider) *Registry {
+	providers := defaultProviders(awsconfig.LoadDefault)
+	providers = append(providers, extra...)
+	return New(onWarning, providers...)
 }
 
-// Default returns a Registry with the built-in SSM and Secrets Manager loaders
-// using shared AWS default credential and region resolution.
-// onWarning is optional and can be nil.
-func Default(ctx context.Context, onWarning func(context.Context, string)) (Registry, error) {
-	cfg, err := awsconfig.LoadDefault(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return defaultRegistry(cfg, onWarning), nil
+type providerFunc struct {
+	source string
+	build  func(context.Context, WarningHandler) (Resolver, error)
 }
 
-func defaultRegistry(cfg aws.Config, onWarning func(context.Context, string)) Registry {
-	return New(
-		ssm.NewFromAWSConfig(cfg, onWarning),
-		secretsmanager.NewFromAWSConfig(cfg, onWarning),
-	)
+func (p providerFunc) Source() string { return p.source }
+
+func (p providerFunc) Build(ctx context.Context, onWarning WarningHandler) (Resolver, error) {
+	return p.build(ctx, onWarning)
+}
+
+func defaultProviders(loadAWSConfig func(context.Context) (aws.Config, error)) []Provider {
+	sharedAWSConfig := awsconfig.NewLoader(loadAWSConfig)
+
+	return []Provider{
+		providerFunc{
+			source: "aws_ssm",
+			build: func(ctx context.Context, onWarning WarningHandler) (Resolver, error) {
+				cfg, err := sharedAWSConfig.Load(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return awsssm.NewResolverFromAWSConfig(cfg, onWarning), nil
+			},
+		},
+		providerFunc{
+			source: "aws_secretsmanager",
+			build: func(ctx context.Context, onWarning WarningHandler) (Resolver, error) {
+				cfg, err := sharedAWSConfig.Load(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return awssecretsmanager.NewResolverFromAWSConfig(cfg, onWarning), nil
+			},
+		},
+	}
 }

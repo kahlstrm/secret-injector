@@ -90,7 +90,7 @@ func (f *fakeSecretsManagerClient) GetSecretValue(_ context.Context, in *awssecr
 	return nil, &smtypes.ResourceNotFoundException{Message: aws.String("not found")}
 }
 
-func TestSecretsManagerLoader_BatchChunkingSizes(t *testing.T) {
+func TestSecretsManagerResolver_BatchChunkingSizes(t *testing.T) {
 	refs := make([]string, 23)
 	values := make(map[string]string, 23)
 	for i := range 23 {
@@ -99,7 +99,7 @@ func TestSecretsManagerLoader_BatchChunkingSizes(t *testing.T) {
 	}
 
 	fake := &fakeSecretsManagerClient{values: values}
-	l := NewLoader("aws_secretsmanager", fake, nil)
+	l := NewResolver(fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -111,14 +111,14 @@ func TestSecretsManagerLoader_BatchChunkingSizes(t *testing.T) {
 	assert.Empty(t, fake.getCalls)
 }
 
-func TestSecretsManagerLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T) {
+func TestSecretsManagerResolver_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T) {
 	refs := []string{"a", "b", "c", "d", "e"}
 	values := map[string]string{"a": "va", "b": "vb", "c": "vc", "d": "vd", "e": "ve"}
 	fake := &fakeSecretsManagerClient{values: values, batchErr: errors.New("access denied")}
 
 	var warnings []string
 	warn := func(_ context.Context, msg string) { warnings = append(warnings, msg) }
-	l := NewLoader("aws_secretsmanager", fake, warn)
+	l := NewResolver(fake, warn)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -131,44 +131,44 @@ func TestSecretsManagerLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T
 	assert.Contains(t, warnings[0], "BatchGetSecretValue failed")
 }
 
-func TestSecretsManagerLoader_BatchSuccessButMissingValue(t *testing.T) {
+func TestSecretsManagerResolver_BatchSuccessButMissingValue(t *testing.T) {
 	refs := []string{"present", "missing"}
 	fake := &fakeSecretsManagerClient{values: map[string]string{"present": "x"}}
-	l := NewLoader("aws_secretsmanager", fake, nil)
+	l := NewResolver(fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"present": "x"}, got)
 }
 
-func TestSecretsManagerLoader_BatchItemErrorFails(t *testing.T) {
+func TestSecretsManagerResolver_BatchItemErrorFails(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		batchItemCodes: map[string]string{"forbidden": "AccessDeniedException"},
 	}
-	l := NewLoader("aws_secretsmanager", fake, nil)
+	l := NewResolver(fake, nil)
 
 	_, err := l.Resolve(context.Background(), []string{"forbidden"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "AccessDeniedException")
 }
 
-func TestSecretsManagerLoader_BinaryValueFails(t *testing.T) {
+func TestSecretsManagerResolver_BinaryValueFails(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		binaryValues: map[string][]byte{"binary": {0x01, 0x02}},
 	}
-	l := NewLoader("aws_secretsmanager", fake, nil)
+	l := NewResolver(fake, nil)
 
 	_, err := l.Resolve(context.Background(), []string{"binary"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "only SecretString is supported")
 }
 
-func TestSecretsManagerLoader_FallbackFailureReturnsError(t *testing.T) {
+func TestSecretsManagerResolver_FallbackFailureReturnsError(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		batchErr:  errors.New("batch unavailable"),
 		getErrors: map[string]error{"a": errors.New("boom")},
 	}
-	l := NewLoader("aws_secretsmanager", fake, nil)
+	l := NewResolver(fake, nil)
 
 	_, err := l.Resolve(context.Background(), []string{"a"})
 	require.Error(t, err)

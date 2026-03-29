@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIntegration_SecretsManagerLoaderWithLocalstack(t *testing.T) {
+func TestIntegration_SecretsManagerResolverWithLocalstack(t *testing.T) {
 	ctx := context.Background()
 	ls := testutil.MustSetupLocalStack(t, ctx)
 	cfg := ls.MustAWSConfig(t, ctx)
@@ -30,7 +30,7 @@ func TestIntegration_SecretsManagerLoaderWithLocalstack(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	l := NewFromAWSConfig(cfg, nil)
+	l := NewResolverFromAWSConfig(cfg, nil)
 	vals, err := l.Resolve(ctx, []string{"it-sm-p1", "it-sm-p2"})
 	require.NoError(t, err)
 	require.Equal(t, "v1", vals["it-sm-p1"])

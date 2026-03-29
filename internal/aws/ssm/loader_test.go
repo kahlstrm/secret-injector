@@ -52,7 +52,7 @@ func (f *fakeSSMClient) GetParameter(_ context.Context, in *awsssm.GetParameterI
 	return &awsssm.GetParameterOutput{Parameter: &ssmtypes.Parameter{Name: aws.String(name), Value: aws.String(v)}}, nil
 }
 
-func TestSSMLoader_BatchChunkingSizes(t *testing.T) {
+func TestSSMResolver_BatchChunkingSizes(t *testing.T) {
 	// 23 refs -> 10, 10, 3 batch calls
 	refs := make([]string, 23)
 	values := make(map[string]string, 23)
@@ -62,7 +62,7 @@ func TestSSMLoader_BatchChunkingSizes(t *testing.T) {
 	}
 
 	fake := &fakeSSMClient{values: values}
-	l := NewLoader("aws_ssm", fake, nil)
+	l := NewResolver(fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -78,14 +78,14 @@ func TestSSMLoader_BatchChunkingSizes(t *testing.T) {
 	assert.Empty(t, fake.getParameterCalls)
 }
 
-func TestSSMLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T) {
+func TestSSMResolver_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T) {
 	refs := []string{"/a", "/b", "/c", "/d", "/e"}
 	values := map[string]string{"/a": "va", "/b": "vb", "/c": "vc", "/d": "vd", "/e": "ve"}
 	fake := &fakeSSMClient{values: values, getParametersError: errors.New("access denied")}
 
 	var warnings []string
 	warn := func(_ context.Context, msg string) { warnings = append(warnings, msg) }
-	l := NewLoader("aws_ssm", fake, warn)
+	l := NewResolver(fake, warn)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
@@ -101,10 +101,10 @@ func TestSSMLoader_FallbackOnBatchError_WarnsAndSucceeds(t *testing.T) {
 	assert.Contains(t, warnings[0], "GetParameters batch failed")
 }
 
-func TestSSMLoader_BatchSuccessButMissingValue(t *testing.T) {
+func TestSSMResolver_BatchSuccessButMissingValue(t *testing.T) {
 	refs := []string{"/present", "/missing"}
 	fake := &fakeSSMClient{values: map[string]string{"/present": "x"}}
-	l := NewLoader("aws_ssm", fake, nil)
+	l := NewResolver(fake, nil)
 
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)

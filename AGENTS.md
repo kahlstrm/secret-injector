@@ -11,7 +11,7 @@ secret-injector/
 ├── cmd/secret-injector/   # CLI entry point (main package)
 ├── pkg/                   # Public libraries (config parsing, loader interfaces)
 │   ├── config/            # JSON config parsing and validation
-│   ├── loader/            # SecretLoader interface and registry
+│   ├── loader/            # Provider, Resolver, and registry APIs
 │   └── util/              # Small utility packages
 ├── internal/              # Private implementation details
 │   ├── aws/               # Shared AWS internals and service loaders
@@ -42,7 +42,7 @@ secret-injector/
 
 ```bash
 # Run a specific test by name
-go test -run TestResolveAll_GroupsBySourceAndCallsOnce ./pkg/loader
+go test -run TestRegistry_ResolveAll_GroupsBySourceAndCallsOnce ./pkg/loader
 
 # Run with verbose output
 go test -v -run TestParseValue ./pkg/config
@@ -68,9 +68,9 @@ Imports must be grouped: (1) stdlib, (2) external deps, (3) internal packages. U
 | Element | Convention | Example |
 |---------|------------|---------|
 | Packages | short, lowercase | `loader`, `config`, `ssm` |
-| Exported | PascalCase | `SecretLoader`, `ResolveAll` |
+| Exported | PascalCase | `Provider`, `Resolver` |
 | Unexported | camelCase | `ssmClient`, `loadConfigFromInput` |
-| Constructors | `NewType(...)` | `NewLoader(...)`, `NewFromAWSConfig(...)` |
+| Constructors | `NewType(...)` | `NewResolver(...)`, `NewResolverFromAWSConfig(...)` |
 | Sentinel errors | `var ErrX = errors.New(...)` | `var ErrUnknownSource = ...` |
 | CLI flags | kebab-case | `--config-file`, `--config` |
 | Env vars | UPPER_SNAKE_CASE | `AWS_REGION`, `CGO_ENABLED` |

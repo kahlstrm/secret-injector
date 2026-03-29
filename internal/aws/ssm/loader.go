@@ -16,12 +16,11 @@ type ssmClient interface {
 	GetParameter(ctx context.Context, params *awsssm.GetParameterInput, optFns ...func(*awsssm.Options)) (*awsssm.GetParameterOutput, error)
 }
 
-// Loader implements loader.SecretLoader for the "aws_ssm" source.
+// Resolver resolves refs from AWS SSM.
 // It prefers batched GetParameters and falls back to per-name GetParameter
 // when the batch call fails (e.g., due to permissions). If the fallback
 // succeeds, an optional onWarning callback is invoked.
-type Loader struct {
-	source    string
+type Resolver struct {
 	client    ssmClient
 	onWarning func(context.Context, string)
 }
@@ -30,22 +29,19 @@ type Loader struct {
 // https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_GetParameters.html#API_GetParameters_RequestParameters
 const ssmBatchMax = 10
 
-// NewLoader constructs an SSM loader with a custom source label and client.
+// NewResolver constructs an SSM resolver with an injected client.
 // onWarning is optional and may be nil.
-func NewLoader(source string, client ssmClient, onWarning func(context.Context, string)) *Loader {
-	return &Loader{source: source, client: client, onWarning: onWarning}
+func NewResolver(client ssmClient, onWarning func(context.Context, string)) *Resolver {
+	return &Resolver{client: client, onWarning: onWarning}
 }
 
-// NewFromAWSConfig constructs an SSM loader from shared AWS SDK config.
-func NewFromAWSConfig(cfg aws.Config, onWarning func(context.Context, string)) *Loader {
-	return &Loader{source: "aws_ssm", client: awsssm.NewFromConfig(cfg), onWarning: onWarning}
+// NewResolverFromAWSConfig constructs an SSM resolver from shared AWS SDK config.
+func NewResolverFromAWSConfig(cfg aws.Config, onWarning func(context.Context, string)) *Resolver {
+	return &Resolver{client: awsssm.NewFromConfig(cfg), onWarning: onWarning}
 }
-
-// Source returns the configured source name.
-func (l *Loader) Source() string { return l.source }
 
 // Resolve implements batch-first secret resolution for SSM.
-func (l *Loader) Resolve(ctx context.Context, refs []string) (map[string]string, error) {
+func (l *Resolver) Resolve(ctx context.Context, refs []string) (map[string]string, error) {
 	// Ensure unique, deterministic refs
 	unique := uniq.UniqueSorted(refs)
 
