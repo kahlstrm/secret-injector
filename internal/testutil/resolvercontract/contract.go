@@ -15,12 +15,12 @@ type resolver interface {
 	Resolve(context.Context, []string) (map[string]string, error)
 }
 
-// Fixture provides seeded refs and resolvers for shared integration behavior.
+// Fixture provides provider-specific setup for shared integration behavior.
 type Fixture struct {
 	Resolver         resolver
 	FallbackResolver resolver
-	Values           map[string]string
-	MissingRef       string
+	Ref              func(string) string
+	Create           func(context.Context, string, string) error
 }
 
 type resolverPath struct {
@@ -32,10 +32,27 @@ type resolverPath struct {
 func Run(t *testing.T, fixture Fixture) {
 	t.Helper()
 	require.NotNil(t, fixture.Resolver)
-	require.NotEmpty(t, fixture.Values)
-	require.NotEmpty(t, fixture.MissingRef)
-	_, exists := fixture.Values[fixture.MissingRef]
-	require.False(t, exists, "missing ref must not be seeded")
+	require.NotNil(t, fixture.Ref)
+	require.NotNil(t, fixture.Create)
+
+	seeds := []struct {
+		name  string
+		value string
+	}{
+		{name: "present-1", value: "value-1"},
+		{name: "present-2", value: "value-2"},
+	}
+	expectedValues := make(map[string]string, len(seeds))
+	for _, seed := range seeds {
+		ref := fixture.Ref(seed.name)
+		require.NotEmpty(t, ref)
+		require.NoError(t, fixture.Create(t.Context(), ref, seed.value))
+		expectedValues[ref] = seed.value
+	}
+	missingRef := fixture.Ref("missing")
+	require.NotEmpty(t, missingRef)
+	_, exists := expectedValues[missingRef]
+	require.False(t, exists, "missing ref must not match a seeded ref")
 
 	paths := []resolverPath{
 		{name: "default", resolver: fixture.Resolver},
@@ -44,8 +61,8 @@ func Run(t *testing.T, fixture Fixture) {
 		paths = append(paths, resolverPath{name: "fallback", resolver: fixture.FallbackResolver})
 	}
 
-	refs := make([]string, 0, len(fixture.Values))
-	for ref := range fixture.Values {
+	refs := make([]string, 0, len(expectedValues))
+	for ref := range expectedValues {
 		refs = append(refs, ref)
 	}
 	sort.Strings(refs)
@@ -53,25 +70,25 @@ func Run(t *testing.T, fixture Fixture) {
 	for _, path := range paths {
 		t.Run(path.name, func(t *testing.T) {
 			t.Run("returns found refs", func(t *testing.T) {
-				values, err := path.resolver.Resolve(t.Context(), refs)
+				actual, err := path.resolver.Resolve(t.Context(), refs)
 
 				require.NoError(t, err)
-				assert.Equal(t, fixture.Values, values)
+				assert.Equal(t, expectedValues, actual)
 			})
 
 			t.Run("omits missing ref", func(t *testing.T) {
-				values, err := path.resolver.Resolve(t.Context(), []string{fixture.MissingRef})
+				values, err := path.resolver.Resolve(t.Context(), []string{missingRef})
 
 				require.NoError(t, err)
 				assert.Empty(t, values)
 			})
 
 			t.Run("returns found and omits missing ref", func(t *testing.T) {
-				requested := append(append([]string(nil), refs...), fixture.MissingRef)
-				values, err := path.resolver.Resolve(t.Context(), requested)
+				requested := append(append([]string(nil), refs...), missingRef)
+				actual, err := path.resolver.Resolve(t.Context(), requested)
 
 				require.NoError(t, err)
-				assert.Equal(t, fixture.Values, values)
+				assert.Equal(t, expectedValues, actual)
 			})
 		})
 	}

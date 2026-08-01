@@ -12,7 +12,6 @@ import (
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/kahlstrm/secret-injector/internal/testutil"
 	"github.com/kahlstrm/secret-injector/internal/testutil/resolvercontract"
-	"github.com/stretchr/testify/require"
 )
 
 type batchFailingClient struct {
@@ -29,24 +28,18 @@ func TestIntegration_SSMResolverContract(t *testing.T) {
 	cfg := ls.MustAWSConfig(t, ctx)
 	client := awsssm.NewFromConfig(cfg)
 
-	values := map[string]string{
-		"/it/contract/p1": "v1",
-		"/it/contract/p2": "v2",
-	}
-	for ref, value := range values {
-		_, err := client.PutParameter(ctx, &awsssm.PutParameterInput{
-			Name:      aws.String(ref),
-			Type:      ssmtypes.ParameterTypeString,
-			Value:     aws.String(value),
-			Overwrite: aws.Bool(true),
-		})
-		require.NoError(t, err)
-	}
-
 	resolvercontract.Run(t, resolvercontract.Fixture{
 		Resolver:         NewResolverFromAWSConfig(cfg, nil),
 		FallbackResolver: NewResolver(batchFailingClient{ssmClient: client}, nil),
-		Values:           values,
-		MissingRef:       "/it/contract/missing",
+		Ref:              func(name string) string { return "/it/contract/" + name },
+		Create: func(ctx context.Context, ref, value string) error {
+			_, err := client.PutParameter(ctx, &awsssm.PutParameterInput{
+				Name:      aws.String(ref),
+				Type:      ssmtypes.ParameterTypeString,
+				Value:     aws.String(value),
+				Overwrite: aws.Bool(true),
+			})
+			return err
+		},
 	})
 }
