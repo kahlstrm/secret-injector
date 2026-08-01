@@ -41,7 +41,7 @@ coverhtml: coverage
 	@echo "Open coverage.html in your browser"
 
 lint:
-	$(GOLANGCI_LINT) run --timeout=5m
+	$(GOLANGCI_LINT) run --build-tags=integration --timeout=5m
 
 fmt:
 	go fmt $(PKG_ALL)

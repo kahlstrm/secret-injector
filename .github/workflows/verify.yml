@@ -57,7 +57,7 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.9.0
-          args: --timeout=5m
+          args: --build-tags=integration --timeout=5m
 
   integration:
     name: Integration Tests
