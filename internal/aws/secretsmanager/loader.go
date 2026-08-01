@@ -56,7 +56,8 @@ func (l *Resolver) Resolve(ctx context.Context, refs []string) (map[string]strin
 
 		chunkValues, err := collectBatchValues(chunk, out)
 		if err != nil {
-			return nil, err
+			batchErr = err
+			break
 		}
 		for ref, val := range chunkValues {
 			values[ref] = val

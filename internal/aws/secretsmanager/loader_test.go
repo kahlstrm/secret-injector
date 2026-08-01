@@ -131,6 +131,27 @@ func TestSecretsManagerResolver_FallbackOnBatchError_WarnsAndSucceeds(t *testing
 	assert.Contains(t, warnings[0], "BatchGetSecretValue failed")
 }
 
+func TestSecretsManagerResolver_FallbackOnBatchItemError_WarnsAndSucceeds(t *testing.T) {
+	refs := []string{"a", "b"}
+	values := map[string]string{"a": "va", "b": "vb"}
+	fake := &fakeSecretsManagerClient{
+		values:         values,
+		batchItemCodes: map[string]string{"b": "AccessDeniedException"},
+	}
+
+	var warnings []string
+	warn := func(_ context.Context, msg string) { warnings = append(warnings, msg) }
+	l := NewResolver(fake, warn)
+
+	got, err := l.Resolve(context.Background(), refs)
+
+	require.NoError(t, err)
+	assert.Equal(t, values, got)
+	assert.Equal(t, refs, fake.getCalls)
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "BatchGetSecretValue failed")
+}
+
 func TestSecretsManagerResolver_BatchSuccessButMissingValue(t *testing.T) {
 	refs := []string{"present", "missing"}
 	fake := &fakeSecretsManagerClient{values: map[string]string{"present": "x"}}
@@ -175,6 +196,7 @@ func TestCollectBatchValues_MapsPartialARN(t *testing.T) {
 func TestSecretsManagerResolver_BatchItemErrorFails(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		batchItemCodes: map[string]string{"forbidden": "AccessDeniedException"},
+		getErrors:      map[string]error{"forbidden": errors.New("access denied")},
 	}
 	l := NewResolver(fake, nil)
 

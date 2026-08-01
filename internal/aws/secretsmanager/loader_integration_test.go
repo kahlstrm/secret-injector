@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awssecretsmanager "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	smtypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/kahlstrm/secret-injector/internal/testutil"
 	"github.com/kahlstrm/secret-injector/internal/testutil/resolvercontract"
 	"github.com/stretchr/testify/require"
@@ -20,6 +21,16 @@ type batchFailingClient struct {
 
 func (c batchFailingClient) BatchGetSecretValue(context.Context, *awssecretsmanager.BatchGetSecretValueInput, ...func(*awssecretsmanager.Options)) (*awssecretsmanager.BatchGetSecretValueOutput, error) {
 	return nil, errors.New("forced batch failure")
+}
+
+type batchItemFailingClient struct {
+	secretsManagerClient
+}
+
+func (c batchItemFailingClient) BatchGetSecretValue(_ context.Context, in *awssecretsmanager.BatchGetSecretValueInput, _ ...func(*awssecretsmanager.Options)) (*awssecretsmanager.BatchGetSecretValueOutput, error) {
+	return &awssecretsmanager.BatchGetSecretValueOutput{Errors: []smtypes.APIErrorType{
+		{ErrorCode: aws.String("AccessDeniedException"), SecretId: aws.String(in.SecretIdList[0])},
+	}}, nil
 }
 
 func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
@@ -54,5 +65,17 @@ func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 		FallbackResolve: NewResolver(batchFailingClient{secretsManagerClient: client}, nil).Resolve,
 		Values:          values,
 		MissingRef:      "resolver-contract-sm-missing",
+	})
+
+	t.Run("falls back after batch item error", func(t *testing.T) {
+		refs := make([]string, 0, len(values))
+		for ref := range values {
+			refs = append(refs, ref)
+		}
+
+		actual, err := NewResolver(batchItemFailingClient{secretsManagerClient: client}, nil).Resolve(t.Context(), refs)
+
+		require.NoError(t, err)
+		require.Equal(t, values, actual)
 	})
 }
