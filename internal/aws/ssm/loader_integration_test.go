@@ -35,9 +35,10 @@ func TestIntegration_SSMResolverContract(t *testing.T) {
 	}
 	for ref, value := range values {
 		_, err := client.PutParameter(ctx, &awsssm.PutParameterInput{
-			Name:  aws.String(ref),
-			Type:  ssmtypes.ParameterTypeString,
-			Value: aws.String(value),
+			Name:      aws.String(ref),
+			Type:      ssmtypes.ParameterTypeString,
+			Value:     aws.String(value),
+			Overwrite: aws.Bool(true),
 		})
 		require.NoError(t, err)
 	}
