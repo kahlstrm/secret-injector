@@ -245,4 +245,4 @@ secrets, err := registry.ResolveAll(ctx, cfg)
 
 - [x] Migrate LocalStack to testcontainers for self-contained integration tests
 - [x] Add end-to-end CLI tests for template-based refs (`validate`, `fetch`, `exec`)
-- [ ] Add shared resolver contract tests for batch and fallback paths
+- [ ] Add shared resolver integration contract tests for found/missing semantics and supported fallback paths
