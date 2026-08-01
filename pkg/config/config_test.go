@@ -9,61 +9,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseValue_Valid(t *testing.T) {
-	tests := []struct {
-		name   string
-		in     string
-		source string
-		ref    string
-	}{
-		{name: "simple", in: "aws_ssm:/app/db/password", source: "aws_ssm", ref: "/app/db/password"},
-		{name: "secrets manager source", in: "aws_secretsmanager:my/service/secret", source: "aws_secretsmanager", ref: "my/service/secret"},
-		{name: "custom source", in: "custom_provider:/path/to/secret", source: "custom_provider", ref: "/path/to/secret"},
-		{name: "legacy source name now syntax-valid", in: "ssm:/x", source: "ssm", ref: "/x"},
-		{name: "trim spaces", in: " aws_ssm : /with/spaces ", source: "aws_ssm", ref: "/with/spaces"},
-		{name: "source lowercase", in: "AWS_SSM:/UpperCaseSource", source: "aws_ssm", ref: "/UpperCaseSource"},
-		{name: "ref contains colon", in: "aws_ssm:/contains:colon", source: "aws_ssm", ref: "/contains:colon"},
-	}
+func TestLoad_StructuredEntries(t *testing.T) {
+	yamlConfig := `secrets:
+  DATABASE_PASSWORD:
+    source: aws_ssm
+    ref: /app/prod/db/password
+  API_KEY:
+    source: aws_secretsmanager
+    ref: app/prod/api-key
+    optional: true
+`
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseValue(tt.in)
-			require.NoError(t, err, tt.in)
-			assert.Equal(t, tt.source, got.Source, tt.in)
-			assert.Equal(t, tt.ref, got.Ref, tt.in)
-		})
-	}
-}
-
-func TestParseValue_Invalid(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-	}{
-		{name: "empty", in: ""},
-		{name: "missing colon", in: "no-colon"},
-		{name: "empty source", in: ":ref-only"},
-		{name: "empty ref", in: "aws_ssm:"},
-		{name: "source starts with digit", in: "1custom:/x"},
-		{name: "source contains dash", in: "custom-provider:/x"},
-		{name: "source contains space", in: "custom provider:/x"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseValue(tt.in)
-			require.Error(t, err, tt.in)
-		})
-	}
+	cfg, err := Load(strings.NewReader(yamlConfig))
+	require.NoError(t, err)
+	assert.Equal(t, Entry{Source: "aws_ssm", Ref: "/app/prod/db/password"}, cfg.Secrets["DATABASE_PASSWORD"])
+	assert.Equal(t, Entry{Source: "aws_secretsmanager", Ref: "app/prod/api-key", Optional: true}, cfg.Secrets["API_KEY"])
 }
 
 func TestLoad_Valid(t *testing.T) {
 	jsonStr := `{
         "secrets": {
-            "DATABASE_PASSWORD": "aws_ssm:/app/prod/db/password",
-            "REDIS_PASSWORD": "aws_ssm:/cache:password"
-        },
-        "optional": ["REDIS_PASSWORD"]
+			"DATABASE_PASSWORD": {"source": "aws_ssm", "ref": "/app/prod/db/password"},
+			"REDIS_PASSWORD": {"source": "aws_ssm", "ref": "/cache:password", "optional": true}
+		}
     }`
 	cfg, err := Load(strings.NewReader(jsonStr))
 	require.NoError(t, err)
@@ -77,10 +45,13 @@ func TestLoad_Valid(t *testing.T) {
 
 func TestLoad_ValidYAML(t *testing.T) {
 	yamlStr := `secrets:
-  DATABASE_PASSWORD: aws_ssm:/app/prod/db/password
-  REDIS_PASSWORD: aws_ssm:/cache:password
-optional:
-  - REDIS_PASSWORD
+  DATABASE_PASSWORD:
+    source: aws_ssm
+    ref: /app/prod/db/password
+  REDIS_PASSWORD:
+    source: aws_ssm
+    ref: /cache:password
+    optional: true
 `
 	cfg, err := Load(strings.NewReader(yamlStr))
 	require.NoError(t, err)
@@ -95,7 +66,7 @@ optional:
 func TestLoad_Valid_SecretsManager(t *testing.T) {
 	jsonStr := `{
         "secrets": {
-            "API_TOKEN": "aws_secretsmanager:my/service/token"
+			"API_TOKEN": {"source": "aws_secretsmanager", "ref": "my/service/token"}
         }
     }`
 	cfg, err := Load(strings.NewReader(jsonStr))
@@ -108,7 +79,7 @@ func TestLoad_Valid_SecretsManager(t *testing.T) {
 func TestLoad_WithSourceValidator_AllowsCustomSource(t *testing.T) {
 	jsonStr := `{
         "secrets": {
-            "API_TOKEN": "custom_provider:my/service/token"
+			"API_TOKEN": {"source": "custom_provider", "ref": "my/service/token"}
         }
     }`
 	cfg, err := Load(strings.NewReader(jsonStr), WithSourceValidator(func(string) error { return nil }))
@@ -131,7 +102,7 @@ func TestLoad_RejectsInvalidEnvironmentNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			input := fmt.Sprintf(`{"secrets":{%q:"aws_ssm:/x"}}`, tt.env)
+			input := fmt.Sprintf(`{"secrets":{%q:{"source":"aws_ssm","ref":"/x"}}}`, tt.env)
 
 			_, err := Load(strings.NewReader(input))
 
@@ -147,8 +118,8 @@ func TestLoad_Errors_YAML(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("value not a string", func(t *testing.T) {
-		_, err := Load(strings.NewReader("secrets:\n  X:\n    nested: true\n"))
+	t.Run("unknown entry field", func(t *testing.T) {
+		_, err := Load(strings.NewReader("secrets:\n  X:\n    source: aws_ssm\n    ref: /x\n    extra: true\n"))
 		require.Error(t, err)
 	})
 
@@ -167,14 +138,11 @@ func TestLoad_Errors(t *testing.T) {
 	}{
 		{name: "missing secrets", json: `{}`},
 		{name: "unknown field", json: `{"secrets": {}, "extra": 1}`},
-		{name: "value not a string", json: `{"secrets": {"X": {}}}`},
-		{name: "legacy ssm source surfaced", json: `{"secrets": {"X": "ssm:/x"}}`, errContains: "unsupported source"},
-		{name: "legacy secrets manager source surfaced", json: `{"secrets": {"X": "secretsmanager:x"}}`, errContains: "unsupported source"},
-		{name: "unsupported source surfaced", json: `{"secrets": {"X": "sm:/x"}}`, errContains: "unsupported source"},
-		{name: "invalid source surfaced", json: `{"secrets": {"X": "custom-provider:/x"}}`, errContains: "invalid source"},
-		{name: "optional references unknown secret", json: `{"secrets": {"X": "aws_ssm:/x"}, "optional": ["MISSING"]}`, errContains: "not defined in secrets"},
-		{name: "optional contains duplicates", json: `{"secrets": {"X": "aws_ssm:/x"}, "optional": ["X", "X"]}`, errContains: "duplicate optional"},
-		{name: "optional contains empty value", json: `{"secrets": {"X": "aws_ssm:/x"}, "optional": [""]}`, errContains: "empty environment variable"},
+		{name: "missing source", json: `{"secrets": {"X": {"ref": "/x"}}}`, errContains: `empty source for environment variable "X"`},
+		{name: "missing ref", json: `{"secrets": {"X": {"source": "aws_ssm"}}}`, errContains: "empty ref"},
+		{name: "unsupported source", json: `{"secrets": {"X": {"source": "sm", "ref": "/x"}}}`, errContains: "unsupported source"},
+		{name: "invalid source", json: `{"secrets": {"X": {"source": "custom-provider", "ref": "/x"}}}`, errContains: "invalid source"},
+		{name: "uppercase source", json: `{"secrets": {"X": {"source": "AWS_SSM", "ref": "/x"}}}`, errContains: "invalid source"},
 	}
 
 	for _, tt := range tests {
@@ -191,8 +159,8 @@ func TestLoad_Errors(t *testing.T) {
 func TestLoad_WithVars_ExpandsRefs(t *testing.T) {
 	jsonStr := `{
         "secrets": {
-            "DATABASE_PASSWORD": "aws_ssm:/app/{{.STAGE}}/db/password",
-            "API_KEY": "aws_ssm:/shared/{{.AWS_REGION}}/api/{{.STAGE}}"
+			"DATABASE_PASSWORD": {"source": "aws_ssm", "ref": "/app/{{.STAGE}}/db/password"},
+			"API_KEY": {"source": "aws_ssm", "ref": "/shared/{{.AWS_REGION}}/api/{{.STAGE}}"}
         }
     }`
 
@@ -210,8 +178,12 @@ func TestLoad_WithVars_ExpandsRefs(t *testing.T) {
 
 func TestLoad_WithVars_ExpandsRefsYAML(t *testing.T) {
 	yamlStr := `secrets:
-  DATABASE_PASSWORD: aws_ssm:/app/{{.STAGE}}/db/password
-  API_KEY: aws_ssm:/shared/{{.AWS_REGION}}/api/{{.STAGE}}
+  DATABASE_PASSWORD:
+    source: aws_ssm
+    ref: /app/{{.STAGE}}/db/password
+  API_KEY:
+    source: aws_ssm
+    ref: /shared/{{.AWS_REGION}}/api/{{.STAGE}}
 `
 
 	cfg, err := Load(
@@ -229,7 +201,7 @@ func TestLoad_WithVars_ExpandsRefsYAML(t *testing.T) {
 func TestLoad_WithVars_AllowsTemplatePipelineAndConditional(t *testing.T) {
 	jsonStr := `{
         "secrets": {
-            "X": "aws_ssm:/app/{{printf \"%s\" .STAGE}}/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}"
+			"X": {"source": "aws_ssm", "ref": "/app/{{printf \"%s\" .STAGE}}/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}"}
         }
     }`
 
@@ -249,11 +221,11 @@ func TestLoad_WithVars_Errors(t *testing.T) {
 		setEnv      map[string]string
 		errContains string
 	}{
-		{name: "missing variable", json: `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`, vars: map[string]string{}, errContains: `map has no entry for key "STAGE"`},
-		{name: "malformed placeholder", json: `{"secrets":{"X":"aws_ssm:/app/{{.STAGE"}}`, vars: map[string]string{"STAGE": "prod"}, errContains: "unclosed action"},
-		{name: "empty rendered ref", json: `{"secrets":{"X":"aws_ssm:{{.REF}}"}}`, vars: map[string]string{"REF": ""}, errContains: "empty ref"},
-		{name: "whitespace rendered ref", json: `{"secrets":{"X":"aws_ssm:{{.REF}}"}}`, vars: map[string]string{"REF": " "}, errContains: "empty ref"},
-		{name: "no os env fallback", json: `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`, vars: map[string]string{}, setEnv: map[string]string{"STAGE": "prod"}, errContains: `map has no entry for key "STAGE"`},
+		{name: "missing variable", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db"}}}`, vars: map[string]string{}, errContains: `map has no entry for key "STAGE"`},
+		{name: "malformed placeholder", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE"}}}`, vars: map[string]string{"STAGE": "prod"}, errContains: "unclosed action"},
+		{name: "empty rendered ref", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"{{.REF}}"}}}`, vars: map[string]string{"REF": ""}, errContains: "empty ref"},
+		{name: "whitespace rendered ref", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"{{.REF}}"}}}`, vars: map[string]string{"REF": " "}, errContains: "empty ref"},
+		{name: "no os env fallback", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db"}}}`, vars: map[string]string{}, setEnv: map[string]string{"STAGE": "prod"}, errContains: `map has no entry for key "STAGE"`},
 	}
 
 	for _, tt := range tests {
@@ -271,7 +243,7 @@ func TestLoad_WithVars_Errors(t *testing.T) {
 
 func TestLoad_WithVars_IgnoresExtraVars(t *testing.T) {
 	_, err := Load(
-		strings.NewReader(`{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`),
+		strings.NewReader(`{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db"}}}`),
 		WithVars(map[string]string{
 			"STAGE": "prod",
 			"EXTRA": "value",

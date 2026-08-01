@@ -17,17 +17,21 @@ Maps environment variable names to cloud secret locations via configuration file
 
 ```yaml
 secrets:
-  DATABASE_PASSWORD: aws_ssm:/app/{{.STAGE}}/db/password
-  API_KEY: aws_ssm:/app/{{.STAGE}}/api/key
-  REGION_KEY: aws_ssm:/shared/{{printf "%s" .AWS_REGION}}/api
-optional:
-  - API_KEY
+  DATABASE_PASSWORD:
+    source: aws_ssm
+    ref: /app/{{.STAGE}}/db/password
+  API_KEY:
+    source: aws_ssm
+    ref: /app/{{.STAGE}}/api/key
+    optional: true
+  REGION_KEY:
+    source: aws_ssm
+    ref: /shared/{{printf "%s" .AWS_REGION}}/api
 ```
 
-Format: `"ENV_VAR_NAME": "<source>:<ref>"`
-
-- `secrets` entries are required by default.
-- `optional` lists secret env names that should not fail execution when missing.
+- Each key under `secrets` is the environment variable to populate.
+- `source` selects the secret backend and `ref` identifies the value to load.
+- Entries are required by default; set `optional: true` to allow a missing value.
 - Missing optional secrets emit warnings and are skipped.
 - Config is parsed as YAML; JSON input is accepted because JSON is valid YAML.
 - `{{.VAR}}` placeholders in refs are resolved from repeatable `--var NAME=VALUE` flags.
@@ -46,15 +50,21 @@ Examples:
 
 ```yaml
 secrets:
-  DB_PASSWORD: aws_ssm:/app/{{.STAGE}}/db/password
-  API_KEY: aws_ssm:/app/{{if eq .STAGE "prod"}}stable{{else}}preview{{end}}/api-key
-  REGION_KEY: aws_ssm:/shared/{{.AWS_REGION | printf "%s"}}/key
+  DB_PASSWORD:
+    source: aws_ssm
+    ref: /app/{{.STAGE}}/db/password
+  API_KEY:
+    source: aws_ssm
+    ref: /app/{{if eq .STAGE "prod"}}stable{{else}}preview{{end}}/api-key
+  REGION_KEY:
+    source: aws_ssm
+    ref: /shared/{{.AWS_REGION | printf "%s"}}/key
 ```
 
 ## Supported Backends
 
-- AWS SSM Parameter Store (`aws_ssm:`)
-- AWS Secrets Manager (`aws_secretsmanager:`)
+- AWS SSM Parameter Store (`aws_ssm`)
+- AWS Secrets Manager (`aws_secretsmanager`)
 
 ## Installation
 
@@ -124,14 +134,17 @@ Example (`--debug`) with a conditional ref template:
 
 ```sh
 secret-injector validate \
-  --config '{"secrets":{"API_KEY":"aws_ssm:/app/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}/api-key"}}' \
+  --config '{"secrets":{"API_KEY":{"source":"aws_ssm","ref":"/app/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}/api-key"}}}' \
   --var STAGE=prod \
   --debug
 
 # output:
 # {
 #   "secrets": {
-#     "API_KEY": "aws_ssm:/app/stable/api-key"
+#     "API_KEY": {
+#       "source": "aws_ssm",
+#       "ref": "/app/stable/api-key"
+#     }
 #   }
 # }
 ```
@@ -152,7 +165,7 @@ secret-injector fetch --config-file secrets.yaml --var STAGE=prod --format=expor
 eval "$(secret-injector fetch --config-file secrets.yaml --var STAGE=prod --format=export)"
 
 # Fetch from inline config
-secret-injector fetch --config '{"secrets":{"API_KEY":"aws_ssm:/app/{{.STAGE}}/key"}}' --var STAGE=prod
+secret-injector fetch --config '{"secrets":{"API_KEY":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/key"}}}' --var STAGE=prod
 ```
 
 ### Execute with Secrets
@@ -165,7 +178,7 @@ secret-injector exec --config-file secrets.yaml --var STAGE=prod -- ./myapp --fl
 secret-injector exec --config-file secrets.yaml --var STAGE=prod -- printenv DATABASE_PASSWORD
 
 # With inline config
-secret-injector exec --config '{"secrets":{"DB_PASS":"aws_ssm:/app/{{.STAGE}}/db/pass"}}' --var STAGE=prod -- ./myapp
+secret-injector exec --config '{"secrets":{"DB_PASS":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db/pass"}}}' --var STAGE=prod -- ./myapp
 ```
 
 ## Library Usage
@@ -204,7 +217,7 @@ secrets, err := registry.ResolveAll(ctx, cfg)
 
 ### AWS Implementation
 
-- [x] Secrets Manager client (`aws_secretsmanager:` prefix)
+- [x] Secrets Manager client (`aws_secretsmanager` source)
 - [ ] Parameter versioning support (`#version=X`) (skipped for now)
 
 ### Advanced Features
