@@ -18,6 +18,7 @@ type fakeSSMClient struct {
 	// Preconfigured behavior/values
 	values             map[string]string
 	getParametersError error
+	getParameterErrors map[string]error
 
 	// Call records
 	getParametersCalls [][]string
@@ -45,6 +46,9 @@ func (f *fakeSSMClient) GetParameters(_ context.Context, in *awsssm.GetParameter
 func (f *fakeSSMClient) GetParameter(_ context.Context, in *awsssm.GetParameterInput, _ ...func(*awsssm.Options)) (*awsssm.GetParameterOutput, error) {
 	name := aws.ToString(in.Name)
 	f.getParameterCalls = append(f.getParameterCalls, name)
+	if err, ok := f.getParameterErrors[name]; ok {
+		return nil, err
+	}
 	v, ok := f.values[name]
 	if !ok {
 		return nil, &ssmtypes.ParameterNotFound{Message: aws.String("not found")}
@@ -123,4 +127,18 @@ func TestSSMResolver_BatchSuccessButMissingValue(t *testing.T) {
 	require.NoError(t, err)
 	// Only present values are included; missing is handled by the caller layer.
 	assert.Equal(t, map[string]string{"/present": "x"}, got)
+}
+
+func TestSSMResolver_FallbackFailureReturnsError(t *testing.T) {
+	fake := &fakeSSMClient{
+		getParametersError: errors.New("batch unavailable"),
+		getParameterErrors: map[string]error{"/a": errors.New("boom")},
+	}
+	l := NewResolver(fake, nil)
+
+	_, err := l.Resolve(context.Background(), []string{"/a"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "fallback GetParameter failed")
+	assert.Contains(t, err.Error(), "batch error")
 }
