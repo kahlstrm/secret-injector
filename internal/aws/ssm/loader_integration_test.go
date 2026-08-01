@@ -40,9 +40,9 @@ func TestIntegration_SSMResolverContract(t *testing.T) {
 	}
 
 	resolvercontract.Run(t, resolvercontract.Fixture{
-		Resolver:         resolver,
-		FallbackResolver: NewResolver(batchFailingClient{ssmClient: client}, nil),
-		Seed:             seed,
+		Resolve:         resolver.Resolve,
+		FallbackResolve: NewResolver(batchFailingClient{ssmClient: client}, nil).Resolve,
+		Seed:            seed,
 	})
 
 	t.Run("slash-prefixed refs", func(t *testing.T) {

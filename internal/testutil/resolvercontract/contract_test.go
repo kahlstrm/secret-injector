@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 type fakeResolver struct {
@@ -27,7 +25,7 @@ func (f *fakeResolver) Resolve(_ context.Context, refs []string) (map[string]str
 func TestRunUsesUniqueRefs(t *testing.T) {
 	values := make(map[string]string)
 	fixture := Fixture{
-		Resolver: &fakeResolver{values: values},
+		Resolve: (&fakeResolver{values: values}).Resolve,
 		Seed: func(_ context.Context, secret Secret) error {
 			if _, exists := values[secret.Ref]; exists {
 				return fmt.Errorf("duplicate ref %q", secret.Ref)
@@ -43,12 +41,4 @@ func TestRunUsesUniqueRefs(t *testing.T) {
 	t.Run("second run", func(t *testing.T) {
 		Run(t, fixture)
 	})
-}
-
-func TestIsNilResolver(t *testing.T) {
-	var typedNil *fakeResolver
-
-	assert.True(t, isNilResolver(nil))
-	assert.True(t, isNilResolver(typedNil))
-	assert.False(t, isNilResolver(&fakeResolver{}))
 }

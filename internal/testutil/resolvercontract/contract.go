@@ -5,7 +5,6 @@ package resolvercontract
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sort"
 	"sync/atomic"
 	"testing"
@@ -14,9 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type resolver interface {
-	Resolve(context.Context, []string) (map[string]string, error)
-}
+// ResolveFunc resolves refs for one contract path.
+type ResolveFunc func(context.Context, []string) (map[string]string, error)
 
 // Secret describes synthetic secret data provisioned by an integration fixture.
 type Secret struct {
@@ -26,14 +24,14 @@ type Secret struct {
 
 // Fixture provides provider-specific setup for shared integration behavior.
 type Fixture struct {
-	Resolver         resolver
-	FallbackResolver resolver
-	Seed             func(context.Context, Secret) error
+	Resolve         ResolveFunc
+	FallbackResolve ResolveFunc
+	Seed            func(context.Context, Secret) error
 }
 
 type resolverPath struct {
-	name     string
-	resolver resolver
+	name    string
+	resolve ResolveFunc
 }
 
 var fixtureSequence atomic.Uint64
@@ -41,7 +39,7 @@ var fixtureSequence atomic.Uint64
 // Run verifies common found and missing semantics against each provided resolver.
 func Run(t *testing.T, fixture Fixture) {
 	t.Helper()
-	require.False(t, isNilResolver(fixture.Resolver), "resolver must not be nil")
+	require.NotNil(t, fixture.Resolve)
 	require.NotNil(t, fixture.Seed)
 
 	namespace := fmt.Sprintf("resolver-contract-%d", fixtureSequence.Add(1))
@@ -57,11 +55,10 @@ func Run(t *testing.T, fixture Fixture) {
 	missingRef := namespace + "-missing"
 
 	paths := []resolverPath{
-		{name: "default", resolver: fixture.Resolver},
+		{name: "default", resolve: fixture.Resolve},
 	}
-	if fixture.FallbackResolver != nil {
-		require.False(t, isNilResolver(fixture.FallbackResolver), "fallback resolver must not be typed nil")
-		paths = append(paths, resolverPath{name: "fallback", resolver: fixture.FallbackResolver})
+	if fixture.FallbackResolve != nil {
+		paths = append(paths, resolverPath{name: "fallback", resolve: fixture.FallbackResolve})
 	}
 
 	refs := make([]string, 0, len(expectedValues))
@@ -73,14 +70,14 @@ func Run(t *testing.T, fixture Fixture) {
 	for _, path := range paths {
 		t.Run(path.name, func(t *testing.T) {
 			t.Run("returns found refs", func(t *testing.T) {
-				actual, err := path.resolver.Resolve(t.Context(), refs)
+				actual, err := path.resolve(t.Context(), refs)
 
 				require.NoError(t, err)
 				assert.Equal(t, expectedValues, actual)
 			})
 
 			t.Run("omits missing ref", func(t *testing.T) {
-				values, err := path.resolver.Resolve(t.Context(), []string{missingRef})
+				values, err := path.resolve(t.Context(), []string{missingRef})
 
 				require.NoError(t, err)
 				assert.Empty(t, values)
@@ -88,25 +85,11 @@ func Run(t *testing.T, fixture Fixture) {
 
 			t.Run("returns found and omits missing ref", func(t *testing.T) {
 				requested := append(append([]string(nil), refs...), missingRef)
-				actual, err := path.resolver.Resolve(t.Context(), requested)
+				actual, err := path.resolve(t.Context(), requested)
 
 				require.NoError(t, err)
 				assert.Equal(t, expectedValues, actual)
 			})
 		})
-	}
-}
-
-func isNilResolver(resolver resolver) bool {
-	if resolver == nil {
-		return true
-	}
-
-	value := reflect.ValueOf(resolver)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return value.IsNil()
-	default:
-		return false
 	}
 }

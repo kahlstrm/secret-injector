@@ -35,8 +35,8 @@ func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 	}
 
 	resolvercontract.Run(t, resolvercontract.Fixture{
-		Resolver:         NewResolverFromAWSConfig(cfg, nil),
-		FallbackResolver: NewResolver(batchFailingClient{secretsManagerClient: client}, nil),
-		Seed:             seed,
+		Resolve:         NewResolverFromAWSConfig(cfg, nil).Resolve,
+		FallbackResolve: NewResolver(batchFailingClient{secretsManagerClient: client}, nil).Resolve,
+		Seed:            seed,
 	})
 }
