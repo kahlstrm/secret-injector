@@ -141,6 +141,19 @@ func TestSecretsManagerResolver_BatchSuccessButMissingValue(t *testing.T) {
 	assert.Equal(t, map[string]string{"present": "x"}, got)
 }
 
+func TestCollectBatchValues_RejectsUnrequestedSingleValue(t *testing.T) {
+	out := &awssecretsmanager.BatchGetSecretValueOutput{
+		SecretValues: []smtypes.SecretValueEntry{
+			{Name: aws.String("unexpected"), SecretString: aws.String("value")},
+		},
+	}
+
+	_, err := collectBatchValues([]string{"requested"}, out)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match requested refs")
+}
+
 func TestSecretsManagerResolver_BatchItemErrorFails(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		batchItemCodes: map[string]string{"forbidden": "AccessDeniedException"},

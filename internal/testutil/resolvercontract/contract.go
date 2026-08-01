@@ -51,6 +51,14 @@ func Run(t *testing.T, fixture Fixture) {
 
 	for _, path := range paths {
 		t.Run(path.name, func(t *testing.T) {
+			t.Run("returns one found ref", func(t *testing.T) {
+				ref := refs[0]
+				actual, err := path.resolve(t.Context(), []string{ref})
+
+				require.NoError(t, err)
+				assert.Equal(t, map[string]string{ref: fixture.Values[ref]}, actual)
+			})
+
 			t.Run("returns found refs", func(t *testing.T) {
 				actual, err := path.resolve(t.Context(), refs)
 

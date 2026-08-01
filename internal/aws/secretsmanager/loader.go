@@ -149,12 +149,6 @@ func matchRequestedRef(requested map[string]struct{}, name, arn string) string {
 		return arn
 	}
 
-	if len(requested) == 1 {
-		for ref := range requested {
-			return ref
-		}
-	}
-
 	return ""
 }
 
