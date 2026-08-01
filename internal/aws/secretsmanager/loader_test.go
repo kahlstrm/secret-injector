@@ -17,6 +17,7 @@ type fakeSecretsManagerClient struct {
 	values         map[string]string
 	binaryValues   map[string][]byte
 	batchErr       error
+	batchOutput    *awssecretsmanager.BatchGetSecretValueOutput
 	batchItemCodes map[string]string
 	getErrors      map[string]error
 
@@ -30,6 +31,9 @@ func (f *fakeSecretsManagerClient) BatchGetSecretValue(_ context.Context, in *aw
 
 	if f.batchErr != nil {
 		return nil, f.batchErr
+	}
+	if f.batchOutput != nil {
+		return f.batchOutput, nil
 	}
 
 	out := &awssecretsmanager.BatchGetSecretValueOutput{}
@@ -160,6 +164,58 @@ func TestSecretsManagerResolver_BatchSuccessButMissingValue(t *testing.T) {
 	got, err := l.Resolve(context.Background(), refs)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"present": "x"}, got)
+}
+
+func TestSecretsManagerResolver_BatchValidationErrorDoesNotFallBack(t *testing.T) {
+	tests := []struct {
+		name        string
+		batchValues []smtypes.SecretValueEntry
+		batchErrors []smtypes.APIErrorType
+		wantError   string
+	}{
+		{
+			name: "unrequested value",
+			batchValues: []smtypes.SecretValueEntry{
+				{Name: aws.String("unexpected"), SecretString: aws.String("value")},
+			},
+			wantError: "does not match requested refs",
+		},
+		{
+			name: "unrequested value with item error",
+			batchValues: []smtypes.SecretValueEntry{
+				{Name: aws.String("unexpected"), SecretString: aws.String("value")},
+			},
+			batchErrors: []smtypes.APIErrorType{
+				{ErrorCode: aws.String("AccessDeniedException"), SecretId: aws.String("requested")},
+			},
+			wantError: "does not match requested refs",
+		},
+		{
+			name: "binary value",
+			batchValues: []smtypes.SecretValueEntry{
+				{Name: aws.String("requested"), SecretBinary: []byte{0x01}},
+			},
+			wantError: "only SecretString is supported",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeSecretsManagerClient{
+				values: map[string]string{"requested": "fallback value"},
+				batchOutput: &awssecretsmanager.BatchGetSecretValueOutput{
+					SecretValues: tt.batchValues,
+					Errors:       tt.batchErrors,
+				},
+			}
+
+			_, err := NewResolver(fake, nil).Resolve(t.Context(), []string{"requested"})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantError)
+			assert.Empty(t, fake.getCalls)
+		})
+	}
 }
 
 func TestCollectBatchValues_RejectsUnrequestedSingleValue(t *testing.T) {

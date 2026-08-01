@@ -33,6 +33,16 @@ func (c batchItemFailingClient) BatchGetSecretValue(_ context.Context, in *awsse
 	}}, nil
 }
 
+type getCountingClient struct {
+	secretsManagerClient
+	getCalls int
+}
+
+func (c *getCountingClient) GetSecretValue(ctx context.Context, in *awssecretsmanager.GetSecretValueInput, optFns ...func(*awssecretsmanager.Options)) (*awssecretsmanager.GetSecretValueOutput, error) {
+	c.getCalls++
+	return c.secretsManagerClient.GetSecretValue(ctx, in, optFns...)
+}
+
 func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 	ctx := context.Background()
 	ls := testutil.MustSetupLocalStack(t, ctx)
@@ -77,5 +87,20 @@ func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, values, actual)
+	})
+
+	t.Run("does not fall back for binary secret", func(t *testing.T) {
+		const name = "resolver-contract-sm-binary"
+		_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
+			Name:         aws.String(name),
+			SecretBinary: []byte{0x01},
+		})
+		require.NoError(t, err)
+
+		countingClient := &getCountingClient{secretsManagerClient: client}
+		_, err = NewResolver(countingClient, nil).Resolve(t.Context(), []string{name})
+
+		require.ErrorContains(t, err, "only SecretString is supported")
+		require.Zero(t, countingClient.getCalls)
 	})
 }

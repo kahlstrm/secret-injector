@@ -21,6 +21,8 @@ type secretsManagerClient interface {
 // secretARNGeneratedSuffixLength includes the hyphen and six characters appended by Secrets Manager.
 const secretARNGeneratedSuffixLength = 7
 
+var errBatchItemFailure = errors.New("batch get secret item failed")
+
 // Resolver resolves secrets from AWS Secrets Manager.
 type Resolver struct {
 	client    secretsManagerClient
@@ -55,6 +57,9 @@ func (l *Resolver) Resolve(ctx context.Context, refs []string) (map[string]strin
 
 		chunkValues, err := collectBatchValues(chunk, out)
 		if err != nil {
+			if !errors.Is(err, errBatchItemFailure) {
+				return nil, err
+			}
 			batchErr = err
 			break
 		}
@@ -109,6 +114,19 @@ func collectBatchValues(requested []string, out *awssecretsmanager.BatchGetSecre
 		requestedSet[ref] = struct{}{}
 	}
 
+	for _, entry := range out.SecretValues {
+		ref := matchRequestedRef(requestedSet, aws.ToString(entry.Name), aws.ToString(entry.ARN))
+		if ref == "" {
+			return nil, errors.New("batch get secret returned a value that does not match requested refs")
+		}
+
+		value, err := extractSecretString(ref, entry.SecretString, entry.SecretBinary)
+		if err != nil {
+			return nil, err
+		}
+		values[ref] = value
+	}
+
 	for _, entryErr := range out.Errors {
 		if isNotFoundCode(aws.ToString(entryErr.ErrorCode)) {
 			continue
@@ -124,22 +142,9 @@ func collectBatchValues(requested []string, out *awssecretsmanager.BatchGetSecre
 		}
 		msg := aws.ToString(entryErr.Message)
 		if msg == "" {
-			return nil, fmt.Errorf("batch get secret failed for %q: %s", secretID, code)
+			return nil, fmt.Errorf("%w for %q: %s", errBatchItemFailure, secretID, code)
 		}
-		return nil, fmt.Errorf("batch get secret failed for %q: %s (%s)", secretID, code, msg)
-	}
-
-	for _, entry := range out.SecretValues {
-		ref := matchRequestedRef(requestedSet, aws.ToString(entry.Name), aws.ToString(entry.ARN))
-		if ref == "" {
-			return nil, errors.New("batch get secret returned a value that does not match requested refs")
-		}
-
-		value, err := extractSecretString(ref, entry.SecretString, entry.SecretBinary)
-		if err != nil {
-			return nil, err
-		}
-		values[ref] = value
+		return nil, fmt.Errorf("%w for %q: %s (%s)", errBatchItemFailure, secretID, code, msg)
 	}
 
 	return values, nil
