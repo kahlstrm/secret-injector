@@ -66,24 +66,24 @@ go install github.com/kahlstrm/secret-injector/cmd/secret-injector@latest
 
 ### GitHub Releases
 
-Download prebuilt archives and checksums from GitHub Releases:
+Download prebuilt archives and checksums from [GitHub Releases](https://github.com/kahlstrm/secret-injector/releases).
 
-- `https://github.com/kahlstrm/secret-injector/releases`
+### Container image
 
-### Docker image (copy static binary)
-
-Use the GHCR image as a binary source in multi-stage Docker builds:
+The GHCR image supports `linux/amd64` and `linux/arm64`. Use it as a binary source in multi-stage Docker builds:
 
 ```dockerfile
-FROM ghcr.io/kahlstrm/secret-injector:v0.1.0 AS secret-injector
+FROM ghcr.io/kahlstrm/secret-injector:0.1.0 AS secret-injector
 
 FROM alpine:3.22
 COPY --from=secret-injector /secret-injector /usr/local/bin/secret-injector
 ```
 
+Stable releases also update `ghcr.io/kahlstrm/secret-injector:latest`. Prereleases do not update `latest`; use a version tag for reproducible builds.
+
 ## Release Process
 
-See `docs/release.md` for the release contract, tag cut flow, and draft-release publish checklist.
+See the [release runbook](docs/release.md) for the release contract, artifact publication flow, and verification checklist.
 
 ## Usage
 
