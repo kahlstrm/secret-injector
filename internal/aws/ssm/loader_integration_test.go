@@ -31,7 +31,6 @@ func TestIntegration_SSMResolverContract(t *testing.T) {
 	resolvercontract.Run(t, resolvercontract.Fixture{
 		Resolver:         NewResolverFromAWSConfig(cfg, nil),
 		FallbackResolver: NewResolver(batchFailingClient{ssmClient: client}, nil),
-		Ref:              func(name string) string { return "/it/contract/" + name },
 		Create: func(ctx context.Context, ref, value string) error {
 			_, err := client.PutParameter(ctx, &awsssm.PutParameterInput{
 				Name:      aws.String(ref),

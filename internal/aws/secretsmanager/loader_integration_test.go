@@ -30,7 +30,6 @@ func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 	resolvercontract.Run(t, resolvercontract.Fixture{
 		Resolver:         NewResolverFromAWSConfig(cfg, nil),
 		FallbackResolver: NewResolver(batchFailingClient{secretsManagerClient: client}, nil),
-		Ref:              func(name string) string { return "it-contract-sm-" + name },
 		Create: func(ctx context.Context, ref, value string) error {
 			_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
 				Name:         aws.String(ref),

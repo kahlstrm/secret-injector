@@ -19,7 +19,6 @@ type resolver interface {
 type Fixture struct {
 	Resolver         resolver
 	FallbackResolver resolver
-	Ref              func(string) string
 	Create           func(context.Context, string, string) error
 }
 
@@ -32,27 +31,21 @@ type resolverPath struct {
 func Run(t *testing.T, fixture Fixture) {
 	t.Helper()
 	require.NotNil(t, fixture.Resolver)
-	require.NotNil(t, fixture.Ref)
 	require.NotNil(t, fixture.Create)
 
 	seeds := []struct {
-		name  string
+		ref   string
 		value string
 	}{
-		{name: "present-1", value: "value-1"},
-		{name: "present-2", value: "value-2"},
+		{ref: "resolver-contract-present-1", value: "value-1"},
+		{ref: "resolver-contract-present-2", value: "value-2"},
 	}
 	expectedValues := make(map[string]string, len(seeds))
 	for _, seed := range seeds {
-		ref := fixture.Ref(seed.name)
-		require.NotEmpty(t, ref)
-		require.NoError(t, fixture.Create(t.Context(), ref, seed.value))
-		expectedValues[ref] = seed.value
+		require.NoError(t, fixture.Create(t.Context(), seed.ref, seed.value))
+		expectedValues[seed.ref] = seed.value
 	}
-	missingRef := fixture.Ref("missing")
-	require.NotEmpty(t, missingRef)
-	_, exists := expectedValues[missingRef]
-	require.False(t, exists, "missing ref must not match a seeded ref")
+	missingRef := "resolver-contract-missing"
 
 	paths := []resolverPath{
 		{name: "default", resolver: fixture.Resolver},
