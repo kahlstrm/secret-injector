@@ -138,6 +138,12 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, err
 	}
+	var trailing any
+	if err := dec.Decode(&trailing); err == nil {
+		return Config{}, errors.New("multiple YAML documents are not supported")
+	} else if !errors.Is(err, io.EOF) {
+		return Config{}, err
+	}
 	if cfg.Secrets == nil {
 		return Config{}, errors.New("missing required field 'secrets'")
 	}

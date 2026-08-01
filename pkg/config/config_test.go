@@ -151,6 +151,12 @@ func TestLoad_Errors_YAML(t *testing.T) {
 		_, err := Load(strings.NewReader("secrets:\n  X:\n    nested: true\n"))
 		require.Error(t, err)
 	})
+
+	t.Run("trailing document", func(t *testing.T) {
+		_, err := Load(strings.NewReader("secrets: {}\n---\nsecrets: {}\n"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "multiple YAML documents")
+	})
 }
 
 func TestLoad_Errors(t *testing.T) {
