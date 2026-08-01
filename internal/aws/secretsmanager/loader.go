@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awssecretsmanager "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -154,10 +153,15 @@ func matchRequestedRef(requested map[string]struct{}, name, arn string) string {
 		return arn
 	}
 
-	for ref := range requested {
-		if len(arn) == len(ref)+secretARNGeneratedSuffixLength && strings.HasPrefix(arn, ref+"-") {
-			return ref
-		}
+	if len(arn) < secretARNGeneratedSuffixLength {
+		return ""
+	}
+	ref := arn[:len(arn)-secretARNGeneratedSuffixLength]
+	if arn[len(ref)] != '-' {
+		return ""
+	}
+	if _, ok := requested[ref]; ok {
+		return ref
 	}
 
 	return ""
