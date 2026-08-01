@@ -45,7 +45,7 @@ secret-injector/
 go test -run TestRegistry_ResolveAll_GroupsBySourceAndCallsOnce ./pkg/loader
 
 # Run with verbose output
-go test -v -run TestParseValue ./pkg/config
+go test -v -run TestLoad_StructuredEntries ./pkg/config
 ```
 
 ### Integration Tests
@@ -123,25 +123,29 @@ Tests live next to code as `*_test.go`. Integration tests use `//go:build integr
 Use table-driven tests:
 
 ```go
-func TestParseValue(t *testing.T) {
+func TestLoad(t *testing.T) {
     tests := []struct {
-        name    string
-        input   string
-        want    Entry
-        wantErr bool
+        name      string
+        input     string
+        wantEntry Entry
+        wantErr   bool
     }{
-        {name: "valid ssm", input: "aws_ssm:/path/to/secret", want: Entry{Source: "aws_ssm", Ref: "/path/to/secret"}},
-        {name: "empty input", input: "", wantErr: true},
+        {
+            name:      "valid ssm",
+            input:     `{"secrets":{"API_KEY":{"source":"aws_ssm","ref":"/path/to/secret"}}}`,
+            wantEntry: Entry{Source: "aws_ssm", Ref: "/path/to/secret"},
+        },
+        {name: "missing secrets", input: `{}`, wantErr: true},
     }
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            got, err := ParseValue(tt.input)
+            got, err := Load(strings.NewReader(tt.input))
             if tt.wantErr {
                 require.Error(t, err)
                 return
             }
             require.NoError(t, err)
-            assert.Equal(t, tt.want, got)
+            assert.Equal(t, tt.wantEntry, got.Secrets["API_KEY"])
         })
     }
 }

@@ -139,7 +139,7 @@ func TestLoad_Errors(t *testing.T) {
 		{name: "missing secrets", json: `{}`},
 		{name: "unknown field", json: `{"secrets": {}, "extra": 1}`},
 		{name: "missing source", json: `{"secrets": {"X": {"ref": "/x"}}}`, errContains: `empty source for environment variable "X"`},
-		{name: "missing ref", json: `{"secrets": {"X": {"source": "aws_ssm"}}}`, errContains: "empty ref"},
+		{name: "missing ref", json: `{"secrets": {"X": {"source": "aws_ssm"}}}`, errContains: `empty ref for environment variable "X"`},
 		{name: "unsupported source", json: `{"secrets": {"X": {"source": "sm", "ref": "/x"}}}`, errContains: "unsupported source"},
 		{name: "invalid source", json: `{"secrets": {"X": {"source": "custom-provider", "ref": "/x"}}}`, errContains: "invalid source"},
 		{name: "uppercase source", json: `{"secrets": {"X": {"source": "AWS_SSM", "ref": "/x"}}}`, errContains: "invalid source"},
@@ -223,8 +223,8 @@ func TestLoad_WithVars_Errors(t *testing.T) {
 	}{
 		{name: "missing variable", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db"}}}`, vars: map[string]string{}, errContains: `map has no entry for key "STAGE"`},
 		{name: "malformed placeholder", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE"}}}`, vars: map[string]string{"STAGE": "prod"}, errContains: "unclosed action"},
-		{name: "empty rendered ref", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"{{.REF}}"}}}`, vars: map[string]string{"REF": ""}, errContains: "empty ref"},
-		{name: "whitespace rendered ref", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"{{.REF}}"}}}`, vars: map[string]string{"REF": " "}, errContains: "empty ref"},
+		{name: "empty rendered ref", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"{{.REF}}"}}}`, vars: map[string]string{"REF": ""}, errContains: `empty ref for environment variable "X"`},
+		{name: "whitespace rendered ref", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"{{.REF}}"}}}`, vars: map[string]string{"REF": " "}, errContains: `empty ref for environment variable "X"`},
 		{name: "no os env fallback", json: `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db"}}}`, vars: map[string]string{}, setEnv: map[string]string{"STAGE": "prod"}, errContains: `map has no entry for key "STAGE"`},
 	}
 

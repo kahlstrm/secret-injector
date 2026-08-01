@@ -116,7 +116,7 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 			return Config{}, err
 		}
 		if strings.TrimSpace(ref) == "" {
-			return Config{}, errors.New("invalid secret value: empty ref after template expansion")
+			return Config{}, fmt.Errorf("empty ref for environment variable %q after template expansion", env)
 		}
 		entry.Ref = ref
 		cfg.Secrets[env] = entry
