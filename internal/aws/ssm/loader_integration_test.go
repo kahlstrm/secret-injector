@@ -28,39 +28,24 @@ func TestIntegration_SSMResolverContract(t *testing.T) {
 	ls := testutil.MustSetupLocalStack(t, ctx)
 	cfg := ls.MustAWSConfig(t, ctx)
 	client := awsssm.NewFromConfig(cfg)
-	resolver := NewResolverFromAWSConfig(cfg, nil)
-	seed := func(ctx context.Context, secret resolvercontract.Secret) error {
+
+	values := map[string]string{
+		"/it/resolver-contract/p1": "value-1",
+		"/it/resolver-contract/p2": "value-2",
+	}
+	for ref, value := range values {
 		_, err := client.PutParameter(ctx, &awsssm.PutParameterInput{
-			Name:      aws.String(secret.Ref),
-			Type:      ssmtypes.ParameterTypeString,
-			Value:     aws.String(secret.Value),
-			Overwrite: aws.Bool(true),
+			Name:  aws.String(ref),
+			Type:  ssmtypes.ParameterTypeString,
+			Value: aws.String(value),
 		})
-		return err
+		require.NoError(t, err)
 	}
 
 	resolvercontract.Run(t, resolvercontract.Fixture{
-		Resolve:         resolver.Resolve,
+		Resolve:         NewResolverFromAWSConfig(cfg, nil).Resolve,
 		FallbackResolve: NewResolver(batchFailingClient{ssmClient: client}, nil).Resolve,
-		Seed:            seed,
-	})
-
-	t.Run("slash-prefixed refs", func(t *testing.T) {
-		secrets := []resolvercontract.Secret{
-			{Ref: "/it/resolver-contract/p1", Value: "path-value-1"},
-			{Ref: "/it/resolver-contract/p2", Value: "path-value-2"},
-		}
-		expected := make(map[string]string, len(secrets))
-		refs := make([]string, 0, len(secrets))
-		for _, secret := range secrets {
-			require.NoError(t, seed(t.Context(), secret))
-			expected[secret.Ref] = secret.Value
-			refs = append(refs, secret.Ref)
-		}
-
-		actual, err := resolver.Resolve(t.Context(), refs)
-
-		require.NoError(t, err)
-		require.Equal(t, expected, actual)
+		Values:          values,
+		MissingRef:      "/it/resolver-contract/missing",
 	})
 }

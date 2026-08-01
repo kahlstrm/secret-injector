@@ -11,6 +11,7 @@ import (
 	awssecretsmanager "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/kahlstrm/secret-injector/internal/testutil"
 	"github.com/kahlstrm/secret-injector/internal/testutil/resolvercontract"
+	"github.com/stretchr/testify/require"
 )
 
 type batchFailingClient struct {
@@ -26,17 +27,23 @@ func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 	ls := testutil.MustSetupLocalStack(t, ctx)
 	cfg := ls.MustAWSConfig(t, ctx)
 	client := awssecretsmanager.NewFromConfig(cfg)
-	seed := func(ctx context.Context, secret resolvercontract.Secret) error {
+
+	values := map[string]string{
+		"resolver-contract-sm-p1": "value-1",
+		"resolver-contract-sm-p2": "value-2",
+	}
+	for ref, value := range values {
 		_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
-			Name:         aws.String(secret.Ref),
-			SecretString: aws.String(secret.Value),
+			Name:         aws.String(ref),
+			SecretString: aws.String(value),
 		})
-		return err
+		require.NoError(t, err)
 	}
 
 	resolvercontract.Run(t, resolvercontract.Fixture{
 		Resolve:         NewResolverFromAWSConfig(cfg, nil).Resolve,
 		FallbackResolve: NewResolver(batchFailingClient{secretsManagerClient: client}, nil).Resolve,
-		Seed:            seed,
+		Values:          values,
+		MissingRef:      "resolver-contract-sm-missing",
 	})
 }
