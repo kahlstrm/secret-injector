@@ -197,10 +197,10 @@ secrets, err := registry.ResolveAll(ctx, cfg)
 
 ### Correctness & Hardening
 
-- [ ] Validate environment variable names before execution or shell export
-- [ ] Reject refs that render empty after template expansion
-- [ ] Reject trailing YAML documents
-- [ ] Preserve optional SSM not-found semantics during per-parameter fallback
+- [x] Validate environment variable names before execution or shell export
+- [x] Reject refs that render empty after template expansion
+- [x] Reject trailing YAML documents
+- [x] Preserve optional SSM not-found semantics during per-parameter fallback
 
 ### AWS Implementation
 
