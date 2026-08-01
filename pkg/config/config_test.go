@@ -245,6 +245,8 @@ func TestLoad_WithVars_Errors(t *testing.T) {
 	}{
 		{name: "missing variable", json: `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`, vars: map[string]string{}, errContains: `map has no entry for key "STAGE"`},
 		{name: "malformed placeholder", json: `{"secrets":{"X":"aws_ssm:/app/{{.STAGE"}}`, vars: map[string]string{"STAGE": "prod"}, errContains: "unclosed action"},
+		{name: "empty rendered ref", json: `{"secrets":{"X":"aws_ssm:{{.REF}}"}}`, vars: map[string]string{"REF": ""}, errContains: "empty ref"},
+		{name: "whitespace rendered ref", json: `{"secrets":{"X":"aws_ssm:{{.REF}}"}}`, vars: map[string]string{"REF": " "}, errContains: "empty ref"},
 		{name: "no os env fallback", json: `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`, vars: map[string]string{}, setEnv: map[string]string{"STAGE": "prod"}, errContains: `map has no entry for key "STAGE"`},
 	}
 
