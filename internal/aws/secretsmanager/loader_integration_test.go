@@ -4,35 +4,46 @@ package secretsmanager
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awssecretsmanager "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/kahlstrm/secret-injector/internal/testutil"
+	"github.com/kahlstrm/secret-injector/internal/testutil/resolvercontract"
 	"github.com/stretchr/testify/require"
 )
 
-func TestIntegration_SecretsManagerResolverWithLocalstack(t *testing.T) {
+type batchFailingClient struct {
+	secretsManagerClient
+}
+
+func (c batchFailingClient) BatchGetSecretValue(context.Context, *awssecretsmanager.BatchGetSecretValueInput, ...func(*awssecretsmanager.Options)) (*awssecretsmanager.BatchGetSecretValueOutput, error) {
+	return nil, errors.New("forced batch failure")
+}
+
+func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 	ctx := context.Background()
 	ls := testutil.MustSetupLocalStack(t, ctx)
 	cfg := ls.MustAWSConfig(t, ctx)
 	client := awssecretsmanager.NewFromConfig(cfg)
 
-	_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
-		Name:         aws.String("it-sm-p1"),
-		SecretString: aws.String("v1"),
-	})
-	require.NoError(t, err)
+	values := map[string]string{
+		"it-contract-sm-p1": "v1",
+		"it-contract-sm-p2": "v2",
+	}
+	for ref, value := range values {
+		_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
+			Name:         aws.String(ref),
+			SecretString: aws.String(value),
+		})
+		require.NoError(t, err)
+	}
 
-	_, err = client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
-		Name:         aws.String("it-sm-p2"),
-		SecretString: aws.String("v2"),
+	resolvercontract.Run(t, resolvercontract.Fixture{
+		Resolver:         NewResolverFromAWSConfig(cfg, nil),
+		FallbackResolver: NewResolver(batchFailingClient{secretsManagerClient: client}, nil),
+		Values:           values,
+		MissingRef:       "it-contract-sm-missing",
 	})
-	require.NoError(t, err)
-
-	l := NewResolverFromAWSConfig(cfg, nil)
-	vals, err := l.Resolve(ctx, []string{"it-sm-p1", "it-sm-p2"})
-	require.NoError(t, err)
-	require.Equal(t, "v1", vals["it-sm-p1"])
-	require.Equal(t, "v2", vals["it-sm-p2"])
 }
