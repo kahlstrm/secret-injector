@@ -195,6 +195,13 @@ secrets, err := registry.ResolveAll(ctx, cfg)
 - [x] Environment variable substitution in refs (`{{.VAR}}`)
 - [x] Validation for missing required variables
 
+### Correctness & Hardening
+
+- [ ] Validate environment variable names before execution or shell export
+- [ ] Reject refs that render empty after template expansion
+- [ ] Reject trailing YAML documents
+- [ ] Preserve optional SSM not-found semantics during per-parameter fallback
+
 ### AWS Implementation
 
 - [x] Secrets Manager client (`aws_secretsmanager:` prefix)
@@ -202,7 +209,6 @@ secrets, err := registry.ResolveAll(ctx, cfg)
 
 ### Advanced Features
 
-- [ ] Prefix/suffix support for env var names
 - [ ] Secret caching
 - [ ] Kubernetes operator library interface
 - [ ] Docker init container mode
