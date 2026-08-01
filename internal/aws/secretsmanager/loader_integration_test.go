@@ -28,16 +28,25 @@ func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 	cfg := ls.MustAWSConfig(t, ctx)
 	client := awssecretsmanager.NewFromConfig(cfg)
 
-	values := map[string]string{
+	seededValues := map[string]string{
 		"resolver-contract-sm-p1": "value-1",
 		"resolver-contract-sm-p2": "value-2",
 	}
-	for ref, value := range values {
-		_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
-			Name:         aws.String(ref),
+	values := make(map[string]string, len(seededValues))
+	for name, value := range seededValues {
+		out, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
+			Name:         aws.String(name),
 			SecretString: aws.String(value),
 		})
 		require.NoError(t, err)
+
+		ref := name
+		if name == "resolver-contract-sm-p1" {
+			arn := aws.ToString(out.ARN)
+			require.Greater(t, len(arn), secretARNGeneratedSuffixLength)
+			ref = arn[:len(arn)-secretARNGeneratedSuffixLength]
+		}
+		values[ref] = value
 	}
 
 	resolvercontract.Run(t, resolvercontract.Fixture{

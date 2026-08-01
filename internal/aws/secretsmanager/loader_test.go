@@ -154,6 +154,24 @@ func TestCollectBatchValues_RejectsUnrequestedSingleValue(t *testing.T) {
 	assert.Contains(t, err.Error(), "does not match requested refs")
 }
 
+func TestCollectBatchValues_MapsPartialARN(t *testing.T) {
+	partialARN := "arn:aws:secretsmanager:us-east-1:123456789012:secret:requested"
+	out := &awssecretsmanager.BatchGetSecretValueOutput{
+		SecretValues: []smtypes.SecretValueEntry{
+			{
+				ARN:          aws.String(partialARN + "-AbCdEf"),
+				Name:         aws.String("requested"),
+				SecretString: aws.String("value"),
+			},
+		},
+	}
+
+	values, err := collectBatchValues([]string{partialARN}, out)
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{partialARN: "value"}, values)
+}
+
 func TestSecretsManagerResolver_BatchItemErrorFails(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		batchItemCodes: map[string]string{"forbidden": "AccessDeniedException"},

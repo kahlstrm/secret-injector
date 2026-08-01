@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awssecretsmanager "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -17,6 +18,9 @@ type secretsManagerClient interface {
 	BatchGetSecretValue(ctx context.Context, params *awssecretsmanager.BatchGetSecretValueInput, optFns ...func(*awssecretsmanager.Options)) (*awssecretsmanager.BatchGetSecretValueOutput, error)
 	GetSecretValue(ctx context.Context, params *awssecretsmanager.GetSecretValueInput, optFns ...func(*awssecretsmanager.Options)) (*awssecretsmanager.GetSecretValueOutput, error)
 }
+
+// secretARNGeneratedSuffixLength includes the hyphen and six characters appended by Secrets Manager.
+const secretARNGeneratedSuffixLength = 7
 
 // Resolver resolves secrets from AWS Secrets Manager.
 type Resolver struct {
@@ -147,6 +151,12 @@ func matchRequestedRef(requested map[string]struct{}, name, arn string) string {
 	}
 	if _, ok := requested[arn]; ok {
 		return arn
+	}
+
+	for ref := range requested {
+		if len(arn) == len(ref)+secretARNGeneratedSuffixLength && strings.HasPrefix(arn, ref+"-") {
+			return ref
+		}
 	}
 
 	return ""
