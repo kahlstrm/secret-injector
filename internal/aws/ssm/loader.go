@@ -2,11 +2,13 @@ package ssm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/kahlstrm/secret-injector/pkg/util/uniq"
 )
 
@@ -78,6 +80,9 @@ func (l *Resolver) Resolve(ctx context.Context, refs []string) (map[string]strin
 			WithDecryption: aws.Bool(true),
 		})
 		if err != nil {
+			if isParameterNotFound(err) {
+				continue
+			}
 			if firstErr == nil {
 				firstErr = fmt.Errorf("fallback GetParameter failed for %q: %w (batch error: %v)", r, err, batchErr)
 			}
@@ -96,4 +101,9 @@ func (l *Resolver) Resolve(ctx context.Context, refs []string) (map[string]strin
 		return fallbackValues, nil
 	}
 	return nil, firstErr
+}
+
+func isParameterNotFound(err error) bool {
+	var notFound *ssmtypes.ParameterNotFound
+	return errors.As(err, &notFound)
 }
