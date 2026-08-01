@@ -82,3 +82,8 @@ docker_manifests:
     image_templates:
       - ghcr.io/kahlstrm/secret-injector:{{ .Version }}-amd64
       - ghcr.io/kahlstrm/secret-injector:{{ .Version }}-arm64
+  - name_template: ghcr.io/kahlstrm/secret-injector:latest
+    image_templates:
+      - ghcr.io/kahlstrm/secret-injector:{{ .Version }}-amd64
+      - ghcr.io/kahlstrm/secret-injector:{{ .Version }}-arm64
+    skip_push: auto

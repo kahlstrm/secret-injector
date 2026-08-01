@@ -7,7 +7,9 @@
 - Binary artifacts: `linux` and `darwin` on `amd64` and `arm64`.
 - Build mode: release binaries are built with `CGO_ENABLED=0`.
 - Container artifacts: GHCR multi-arch image for `linux/amd64` and `linux/arm64`.
+- Container tags: every release publishes its version without the leading `v`; stable releases also update `latest`, while prereleases do not.
 - GitHub Releases: created as drafts and published after review.
+- Publication timing: GHCR images are published before the draft GitHub Release is manually published.
 
 ## Pre-release checklist
 
@@ -17,9 +19,11 @@
 4. Pick the next SemVer version.
 5. Optional local preflight: `make release-dry-run`.
 
-## Cut a release
+## Start a release
 
-Create and push a SemVer tag from `main`:
+Run the `Release` workflow from `main` and provide the new SemVer version. The workflow validates that the tag does not exist, then creates it from the selected `main` commit.
+
+Alternatively, create and push the tag locally:
 
 ```sh
 git checkout main
@@ -33,8 +37,11 @@ Tag pushes trigger `.github/workflows/release.yml`, which:
 - validates the tag format as SemVer,
 - reruns format, vet, lint, unit tests, and integration tests,
 - creates release binaries and `checksums.txt`,
-- publishes GHCR multi-arch images,
+- publishes the versioned GHCR multi-arch image,
+- updates the GHCR `latest` tag for stable releases,
 - creates/updates a draft GitHub Release.
+
+The GitHub Release remains a draft until reviewed, but the GHCR images are available as soon as GoReleaser completes.
 
 ## Publish the draft release
 
@@ -49,11 +56,14 @@ Tag pushes trigger `.github/workflows/release.yml`, which:
 3. Verify container image exists:
 
 ```sh
-docker pull ghcr.io/kahlstrm/secret-injector:v0.1.0
-docker run --rm ghcr.io/kahlstrm/secret-injector:v0.1.0 --version
+docker pull ghcr.io/kahlstrm/secret-injector:0.1.0
+docker run --rm ghcr.io/kahlstrm/secret-injector:0.1.0 --version
+docker pull ghcr.io/kahlstrm/secret-injector:latest
+docker run --rm ghcr.io/kahlstrm/secret-injector:latest --version
 ```
 
-4. Verify copy-from flow with a local Docker build.
+4. For stable releases, verify that `latest` resolves to the released version.
+5. Verify copy-from flow with a local Docker build.
 
 ## If release fails
 
