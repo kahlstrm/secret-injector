@@ -5,10 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"text/template"
 
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	sourcePattern  = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 // Entry represents a single secret binding in the form "<source>:<ref>".
@@ -79,16 +85,7 @@ func ParseValue(s string) (Entry, error) {
 }
 
 func isValidSource(source string) bool {
-	for i, r := range source {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case i > 0 && r >= '0' && r <= '9':
-		case i > 0 && r == '_':
-		default:
-			return false
-		}
-	}
-	return true
+	return sourcePattern.MatchString(source)
 }
 
 // UnmarshalJSON allows Entry to be represented as a single JSON string
@@ -146,6 +143,10 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 	}
 
 	for env, entry := range cfg.Secrets {
+		if !isValidEnvName(env) {
+			return Config{}, fmt.Errorf("invalid environment variable name %q: expected letters or underscore followed by letters, digits, or underscores", env)
+		}
+
 		if options.sourceValidator != nil {
 			if err := options.sourceValidator(entry.Source); err != nil {
 				return Config{}, err
@@ -179,6 +180,10 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func isValidEnvName(name string) bool {
+	return envNamePattern.MatchString(name)
 }
 
 func defaultSourceValidator(source string) error {

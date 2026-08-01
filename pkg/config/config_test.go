@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -115,6 +116,29 @@ func TestLoad_WithSourceValidator_AllowsCustomSource(t *testing.T) {
 	require.NotNil(t, cfg.Secrets)
 	assert.Equal(t, "custom_provider", cfg.Secrets["API_TOKEN"].Source)
 	assert.Equal(t, "my/service/token", cfg.Secrets["API_TOKEN"].Ref)
+}
+
+func TestLoad_RejectsInvalidEnvironmentNames(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+	}{
+		{name: "empty", env: ""},
+		{name: "starts with digit", env: "1SECRET"},
+		{name: "contains equals", env: "BAD=NAME"},
+		{name: "contains shell metacharacter", env: "BAD;NAME"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := fmt.Sprintf(`{"secrets":{%q:"aws_ssm:/x"}}`, tt.env)
+
+			_, err := Load(strings.NewReader(input))
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid environment variable name")
+		})
+	}
 }
 
 func TestLoad_Errors_YAML(t *testing.T) {
