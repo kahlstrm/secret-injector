@@ -17,6 +17,7 @@ type fakeSecretsManagerClient struct {
 	values         map[string]string
 	binaryValues   map[string][]byte
 	batchErr       error
+	batchOutput    *awssecretsmanager.BatchGetSecretValueOutput
 	batchItemCodes map[string]string
 	getErrors      map[string]error
 
@@ -30,6 +31,9 @@ func (f *fakeSecretsManagerClient) BatchGetSecretValue(_ context.Context, in *aw
 
 	if f.batchErr != nil {
 		return nil, f.batchErr
+	}
+	if f.batchOutput != nil {
+		return f.batchOutput, nil
 	}
 
 	out := &awssecretsmanager.BatchGetSecretValueOutput{}
@@ -131,6 +135,27 @@ func TestSecretsManagerResolver_FallbackOnBatchError_WarnsAndSucceeds(t *testing
 	assert.Contains(t, warnings[0], "BatchGetSecretValue failed")
 }
 
+func TestSecretsManagerResolver_FallbackOnBatchItemError_WarnsAndSucceeds(t *testing.T) {
+	refs := []string{"a", "b"}
+	values := map[string]string{"a": "va", "b": "vb"}
+	fake := &fakeSecretsManagerClient{
+		values:         values,
+		batchItemCodes: map[string]string{"b": "AccessDeniedException"},
+	}
+
+	var warnings []string
+	warn := func(_ context.Context, msg string) { warnings = append(warnings, msg) }
+	l := NewResolver(fake, warn)
+
+	got, err := l.Resolve(context.Background(), refs)
+
+	require.NoError(t, err)
+	assert.Equal(t, values, got)
+	assert.Equal(t, refs, fake.getCalls)
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "BatchGetSecretValue failed")
+}
+
 func TestSecretsManagerResolver_BatchSuccessButMissingValue(t *testing.T) {
 	refs := []string{"present", "missing"}
 	fake := &fakeSecretsManagerClient{values: map[string]string{"present": "x"}}
@@ -141,9 +166,93 @@ func TestSecretsManagerResolver_BatchSuccessButMissingValue(t *testing.T) {
 	assert.Equal(t, map[string]string{"present": "x"}, got)
 }
 
+func TestSecretsManagerResolver_BatchValidationErrorDoesNotFallBack(t *testing.T) {
+	tests := []struct {
+		name        string
+		batchValues []smtypes.SecretValueEntry
+		batchErrors []smtypes.APIErrorType
+		wantError   string
+	}{
+		{
+			name: "unrequested value",
+			batchValues: []smtypes.SecretValueEntry{
+				{Name: aws.String("unexpected"), SecretString: aws.String("value")},
+			},
+			wantError: "does not match requested refs",
+		},
+		{
+			name: "unrequested value with item error",
+			batchValues: []smtypes.SecretValueEntry{
+				{Name: aws.String("unexpected"), SecretString: aws.String("value")},
+			},
+			batchErrors: []smtypes.APIErrorType{
+				{ErrorCode: aws.String("AccessDeniedException"), SecretId: aws.String("requested")},
+			},
+			wantError: "does not match requested refs",
+		},
+		{
+			name: "binary value",
+			batchValues: []smtypes.SecretValueEntry{
+				{Name: aws.String("requested"), SecretBinary: []byte{0x01}},
+			},
+			wantError: "only SecretString is supported",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeSecretsManagerClient{
+				values: map[string]string{"requested": "fallback value"},
+				batchOutput: &awssecretsmanager.BatchGetSecretValueOutput{
+					SecretValues: tt.batchValues,
+					Errors:       tt.batchErrors,
+				},
+			}
+
+			_, err := NewResolver(fake, nil).Resolve(t.Context(), []string{"requested"})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantError)
+			assert.Empty(t, fake.getCalls)
+		})
+	}
+}
+
+func TestCollectBatchValues_RejectsUnrequestedSingleValue(t *testing.T) {
+	out := &awssecretsmanager.BatchGetSecretValueOutput{
+		SecretValues: []smtypes.SecretValueEntry{
+			{Name: aws.String("unexpected"), SecretString: aws.String("value")},
+		},
+	}
+
+	_, err := collectBatchValues([]string{"requested"}, out)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match requested refs")
+}
+
+func TestCollectBatchValues_MapsPartialARN(t *testing.T) {
+	partialARN := "arn:aws:secretsmanager:us-east-1:123456789012:secret:requested"
+	out := &awssecretsmanager.BatchGetSecretValueOutput{
+		SecretValues: []smtypes.SecretValueEntry{
+			{
+				ARN:          aws.String(partialARN + "-AbCdEf"),
+				Name:         aws.String("requested"),
+				SecretString: aws.String("value"),
+			},
+		},
+	}
+
+	values, err := collectBatchValues([]string{partialARN}, out)
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{partialARN: "value"}, values)
+}
+
 func TestSecretsManagerResolver_BatchItemErrorFails(t *testing.T) {
 	fake := &fakeSecretsManagerClient{
 		batchItemCodes: map[string]string{"forbidden": "AccessDeniedException"},
+		getErrors:      map[string]error{"forbidden": errors.New("access denied")},
 	}
 	l := NewResolver(fake, nil)
 

@@ -18,6 +18,11 @@ type secretsManagerClient interface {
 	GetSecretValue(ctx context.Context, params *awssecretsmanager.GetSecretValueInput, optFns ...func(*awssecretsmanager.Options)) (*awssecretsmanager.GetSecretValueOutput, error)
 }
 
+// secretARNGeneratedSuffixLength includes the hyphen and six characters appended by Secrets Manager.
+const secretARNGeneratedSuffixLength = 7
+
+var errBatchItemFailure = errors.New("batch get secret item failed")
+
 // Resolver resolves secrets from AWS Secrets Manager.
 type Resolver struct {
 	client    secretsManagerClient
@@ -52,7 +57,11 @@ func (l *Resolver) Resolve(ctx context.Context, refs []string) (map[string]strin
 
 		chunkValues, err := collectBatchValues(chunk, out)
 		if err != nil {
-			return nil, err
+			if !errors.Is(err, errBatchItemFailure) {
+				return nil, err
+			}
+			batchErr = err
+			break
 		}
 		for ref, val := range chunkValues {
 			values[ref] = val
@@ -105,6 +114,19 @@ func collectBatchValues(requested []string, out *awssecretsmanager.BatchGetSecre
 		requestedSet[ref] = struct{}{}
 	}
 
+	for _, entry := range out.SecretValues {
+		ref := matchRequestedRef(requestedSet, aws.ToString(entry.Name), aws.ToString(entry.ARN))
+		if ref == "" {
+			return nil, errors.New("batch get secret returned a value that does not match requested refs")
+		}
+
+		value, err := extractSecretString(ref, entry.SecretString, entry.SecretBinary)
+		if err != nil {
+			return nil, err
+		}
+		values[ref] = value
+	}
+
 	for _, entryErr := range out.Errors {
 		if isNotFoundCode(aws.ToString(entryErr.ErrorCode)) {
 			continue
@@ -120,22 +142,9 @@ func collectBatchValues(requested []string, out *awssecretsmanager.BatchGetSecre
 		}
 		msg := aws.ToString(entryErr.Message)
 		if msg == "" {
-			return nil, fmt.Errorf("batch get secret failed for %q: %s", secretID, code)
+			return nil, fmt.Errorf("%w for %q: %s", errBatchItemFailure, secretID, code)
 		}
-		return nil, fmt.Errorf("batch get secret failed for %q: %s (%s)", secretID, code, msg)
-	}
-
-	for _, entry := range out.SecretValues {
-		ref := matchRequestedRef(requestedSet, aws.ToString(entry.Name), aws.ToString(entry.ARN))
-		if ref == "" {
-			return nil, errors.New("batch get secret returned a value that does not match requested refs")
-		}
-
-		value, err := extractSecretString(ref, entry.SecretString, entry.SecretBinary)
-		if err != nil {
-			return nil, err
-		}
-		values[ref] = value
+		return nil, fmt.Errorf("%w for %q: %s (%s)", errBatchItemFailure, secretID, code, msg)
 	}
 
 	return values, nil
@@ -149,10 +158,15 @@ func matchRequestedRef(requested map[string]struct{}, name, arn string) string {
 		return arn
 	}
 
-	if len(requested) == 1 {
-		for ref := range requested {
-			return ref
-		}
+	if len(arn) < secretARNGeneratedSuffixLength {
+		return ""
+	}
+	ref := arn[:len(arn)-secretARNGeneratedSuffixLength]
+	if arn[len(ref)] != '-' {
+		return ""
+	}
+	if _, ok := requested[ref]; ok {
+		return ref
 	}
 
 	return ""
