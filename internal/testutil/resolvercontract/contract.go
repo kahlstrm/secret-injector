@@ -4,7 +4,10 @@ package resolvercontract
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 	"sort"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,11 +18,17 @@ type resolver interface {
 	Resolve(context.Context, []string) (map[string]string, error)
 }
 
+// Secret describes synthetic secret data provisioned by an integration fixture.
+type Secret struct {
+	Ref   string
+	Value string
+}
+
 // Fixture provides provider-specific setup for shared integration behavior.
 type Fixture struct {
 	Resolver         resolver
 	FallbackResolver resolver
-	Create           func(context.Context, string, string) error
+	Seed             func(context.Context, Secret) error
 }
 
 type resolverPath struct {
@@ -27,30 +36,31 @@ type resolverPath struct {
 	resolver resolver
 }
 
+var fixtureSequence atomic.Uint64
+
 // Run verifies common found and missing semantics against each provided resolver.
 func Run(t *testing.T, fixture Fixture) {
 	t.Helper()
-	require.NotNil(t, fixture.Resolver)
-	require.NotNil(t, fixture.Create)
+	require.False(t, isNilResolver(fixture.Resolver), "resolver must not be nil")
+	require.NotNil(t, fixture.Seed)
 
-	seeds := []struct {
-		ref   string
-		value string
-	}{
-		{ref: "resolver-contract-present-1", value: "value-1"},
-		{ref: "resolver-contract-present-2", value: "value-2"},
+	namespace := fmt.Sprintf("resolver-contract-%d", fixtureSequence.Add(1))
+	secrets := []Secret{
+		{Ref: namespace + "-present-1", Value: "value-1"},
+		{Ref: namespace + "-present-2", Value: "value-2"},
 	}
-	expectedValues := make(map[string]string, len(seeds))
-	for _, seed := range seeds {
-		require.NoError(t, fixture.Create(t.Context(), seed.ref, seed.value))
-		expectedValues[seed.ref] = seed.value
+	expectedValues := make(map[string]string, len(secrets))
+	for _, secret := range secrets {
+		require.NoError(t, fixture.Seed(t.Context(), secret))
+		expectedValues[secret.Ref] = secret.Value
 	}
-	missingRef := "resolver-contract-missing"
+	missingRef := namespace + "-missing"
 
 	paths := []resolverPath{
 		{name: "default", resolver: fixture.Resolver},
 	}
 	if fixture.FallbackResolver != nil {
+		require.False(t, isNilResolver(fixture.FallbackResolver), "fallback resolver must not be typed nil")
 		paths = append(paths, resolverPath{name: "fallback", resolver: fixture.FallbackResolver})
 	}
 
@@ -84,5 +94,19 @@ func Run(t *testing.T, fixture Fixture) {
 				assert.Equal(t, expectedValues, actual)
 			})
 		})
+	}
+}
+
+func isNilResolver(resolver resolver) bool {
+	if resolver == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(resolver)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
 	}
 }

@@ -26,16 +26,17 @@ func TestIntegration_SecretsManagerResolverContract(t *testing.T) {
 	ls := testutil.MustSetupLocalStack(t, ctx)
 	cfg := ls.MustAWSConfig(t, ctx)
 	client := awssecretsmanager.NewFromConfig(cfg)
+	seed := func(ctx context.Context, secret resolvercontract.Secret) error {
+		_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
+			Name:         aws.String(secret.Ref),
+			SecretString: aws.String(secret.Value),
+		})
+		return err
+	}
 
 	resolvercontract.Run(t, resolvercontract.Fixture{
 		Resolver:         NewResolverFromAWSConfig(cfg, nil),
 		FallbackResolver: NewResolver(batchFailingClient{secretsManagerClient: client}, nil),
-		Create: func(ctx context.Context, ref, value string) error {
-			_, err := client.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
-				Name:         aws.String(ref),
-				SecretString: aws.String(value),
-			})
-			return err
-		},
+		Seed:             seed,
 	})
 }
