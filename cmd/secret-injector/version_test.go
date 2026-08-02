@@ -1,6 +1,7 @@
 package main
 
 import (
+	"debug/buildinfo"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
@@ -39,27 +40,39 @@ func TestResolveVersion(t *testing.T) {
 	}{
 		{
 			name:          "module installed binary",
-			linkerVersion: "dev",
+			linkerVersion: "",
 			info:          moduleInfo,
 			want:          "1.2.3",
 		},
 		{
 			name:          "development build without module version",
-			linkerVersion: "dev",
+			linkerVersion: "",
 			info:          &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}},
 			want:          "dev",
 		},
 		{
+			name:          "missing build info",
+			linkerVersion: "",
+			info:          nil,
+			want:          "dev",
+		},
+		{
+			name:          "empty module version",
+			linkerVersion: "",
+			info:          &debug.BuildInfo{},
+			want:          "dev",
+		},
+		{
 			name:          "module pseudo-version",
-			linkerVersion: "dev",
+			linkerVersion: "",
 			info:          &debug.BuildInfo{Main: debug.Module{Version: "v1.2.4-0.20260802120000-abc123def456"}},
 			want:          "1.2.4-0.20260802120000-abc123def456",
 		},
 		{
-			name:          "linker metadata wins",
-			linkerVersion: "2.0.0",
+			name:          "explicit dev linker metadata wins",
+			linkerVersion: "dev",
 			info:          moduleInfo,
-			want:          "2.0.0",
+			want:          "dev",
 		},
 	}
 
@@ -71,17 +84,44 @@ func TestResolveVersion(t *testing.T) {
 }
 
 func TestVersionFlag_WithBuildMetadata(t *testing.T) {
-	tmpDir := t.TempDir()
-	binary := filepath.Join(tmpDir, "secret-injector")
-
 	ldflags := "-X main.version=1.2.3 -X main.commit=abc123 -X main.date=2026-02-28T00:00:00Z"
-	buildCmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", binary, ".")
-	buildOut, err := buildCmd.CombinedOutput()
-	require.NoError(t, err, "build failed: %s", string(buildOut))
+	binary := buildVersionBinary(t, ldflags)
 
 	runCmd := exec.Command(binary, "--version")
 	runOut, err := runCmd.CombinedOutput()
 	require.NoError(t, err, "version command failed: %s", string(runOut))
 
 	assert.Equal(t, "secret-injector version 1.2.3 (commit=abc123 date=2026-02-28T00:00:00Z)", strings.TrimSpace(string(runOut)))
+}
+
+func TestVersionFlag_WithoutBuildMetadata(t *testing.T) {
+	binary := buildVersionBinary(t, "")
+	info, err := buildinfo.ReadFile(binary)
+	require.NoError(t, err)
+
+	wantVersion := "dev"
+	if info.Main.Version != "" && info.Main.Version != "(devel)" {
+		wantVersion = strings.TrimPrefix(info.Main.Version, "v")
+	}
+
+	runCmd := exec.Command(binary, "--version")
+	runOut, err := runCmd.CombinedOutput()
+	require.NoError(t, err, "version command failed: %s", string(runOut))
+
+	want := "secret-injector version " + wantVersion + " (commit=none date=unknown)"
+	assert.Equal(t, want, strings.TrimSpace(string(runOut)))
+}
+
+func buildVersionBinary(t *testing.T, ldflags string) string {
+	t.Helper()
+
+	binary := filepath.Join(t.TempDir(), "secret-injector")
+	args := []string{"build"}
+	if ldflags != "" {
+		args = append(args, "-ldflags", ldflags)
+	}
+	args = append(args, "-o", binary, ".")
+	buildOut, err := exec.Command("go", args...).CombinedOutput()
+	require.NoError(t, err, "build failed: %s", string(buildOut))
+	return binary
 }

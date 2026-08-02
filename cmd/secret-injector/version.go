@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	version = "dev"
+	version = ""
 	commit  = "none"
 	date    = "unknown"
 )
@@ -18,8 +18,11 @@ func buildVersion() string {
 }
 
 func resolveVersion(linkerVersion string, info *debug.BuildInfo) string {
-	if linkerVersion != "dev" || info == nil || info.Main.Version == "" || info.Main.Version == "(devel)" {
+	if linkerVersion != "" {
 		return linkerVersion
+	}
+	if info == nil || info.Main.Version == "" || info.Main.Version == "(devel)" {
+		return "dev"
 	}
 	return strings.TrimPrefix(info.Main.Version, "v")
 }
