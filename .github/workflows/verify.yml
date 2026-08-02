@@ -28,10 +28,7 @@ jobs:
           cache: true
 
       - name: Setup GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: v2.12.7
-          install-only: true
+        uses: ./.github/actions/setup-goreleaser
 
       - name: Verify formatting
         run: make fmt && git diff --exit-code
