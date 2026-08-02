@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,11 +16,11 @@ var (
 	envNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
-// Entry represents a single secret binding in the form "<source>:<ref>".
+// Entry represents a single secret binding.
 type Entry struct {
-	Source   string
-	Ref      string
-	Optional bool
+	Source   string `json:"source" yaml:"source"`
+	Ref      string `json:"ref" yaml:"ref"`
+	Optional bool   `json:"optional,omitempty" yaml:"optional,omitempty"`
 }
 
 // Secrets maps environment variable names to secret entries.
@@ -29,8 +28,7 @@ type Secrets map[string]Entry
 
 // Config is the top-level configuration structure with a required `secrets` field.
 type Config struct {
-	Secrets  Secrets  `json:"secrets" yaml:"secrets"`
-	Optional []string `json:"optional,omitempty" yaml:"optional,omitempty"`
+	Secrets Secrets `json:"secrets" yaml:"secrets"`
 }
 
 type loadOptions struct {
@@ -61,60 +59,8 @@ func WithSourceValidator(validator func(string) error) LoadOption {
 	}
 }
 
-// ParseValue parses a binding value of the form "<source>:<ref>".
-// It trims whitespace, lowercases the source, and validates both parts are non-empty.
-func ParseValue(s string) (Entry, error) {
-	s = strings.TrimSpace(s)
-	i := strings.IndexRune(s, ':')
-	if i <= 0 || i >= len(s)-1 { // colon must not be at start or end
-		return Entry{}, fmt.Errorf("invalid secret value %q: expected '<source>:<ref>'", s)
-	}
-
-	source := strings.ToLower(strings.TrimSpace(s[:i]))
-	ref := strings.TrimSpace(s[i+1:])
-
-	if source == "" || ref == "" {
-		return Entry{}, errors.New("invalid secret value: empty source or ref")
-	}
-
-	if !isValidSource(source) {
-		return Entry{}, fmt.Errorf("invalid source %q: expected lowercase letters, digits, and underscores", source)
-	}
-
-	return Entry{Source: source, Ref: ref}, nil
-}
-
 func isValidSource(source string) bool {
 	return sourcePattern.MatchString(source)
-}
-
-// UnmarshalJSON allows Entry to be represented as a single JSON string
-// in the form "<source>:<ref>".
-func (e *Entry) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return fmt.Errorf("entry must be a string: %w", err)
-	}
-	return e.unmarshalString(s)
-}
-
-// UnmarshalYAML allows Entry to be represented as a single YAML string
-// in the form "<source>:<ref>".
-func (e *Entry) UnmarshalYAML(value *yaml.Node) error {
-	var s string
-	if err := value.Decode(&s); err != nil {
-		return fmt.Errorf("entry must be a string: %w", err)
-	}
-	return e.unmarshalString(s)
-}
-
-func (e *Entry) unmarshalString(s string) error {
-	parsed, err := ParseValue(s)
-	if err != nil {
-		return err
-	}
-	*e = parsed
-	return nil
 }
 
 // Load reads and decodes a Config from the provided reader.
@@ -152,6 +98,12 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 		if !isValidEnvName(env) {
 			return Config{}, fmt.Errorf("invalid environment variable name %q: expected letters or underscore followed by letters, digits, or underscores", env)
 		}
+		if strings.TrimSpace(entry.Source) == "" {
+			return Config{}, fmt.Errorf("empty source for environment variable %q", env)
+		}
+		if !isValidSource(entry.Source) {
+			return Config{}, fmt.Errorf("invalid source %q for environment variable %q: expected lowercase letters, digits, and underscores", entry.Source, env)
+		}
 
 		if options.sourceValidator != nil {
 			if err := options.sourceValidator(entry.Source); err != nil {
@@ -164,28 +116,10 @@ func Load(r io.Reader, opts ...LoadOption) (Config, error) {
 			return Config{}, err
 		}
 		if strings.TrimSpace(ref) == "" {
-			return Config{}, errors.New("invalid secret value: empty ref after template expansion")
+			return Config{}, fmt.Errorf("empty ref for environment variable %q after template expansion", env)
 		}
 		entry.Ref = ref
 		cfg.Secrets[env] = entry
-	}
-
-	seenOptional := make(map[string]struct{}, len(cfg.Optional))
-	for _, env := range cfg.Optional {
-		env = strings.TrimSpace(env)
-		if env == "" {
-			return Config{}, errors.New("optional contains empty environment variable name")
-		}
-		if _, exists := seenOptional[env]; exists {
-			return Config{}, fmt.Errorf("duplicate optional environment variable %q", env)
-		}
-		entry, exists := cfg.Secrets[env]
-		if !exists {
-			return Config{}, fmt.Errorf("optional environment variable %q is not defined in secrets", env)
-		}
-		entry.Optional = true
-		cfg.Secrets[env] = entry
-		seenOptional[env] = struct{}{}
 	}
 
 	return cfg, nil

@@ -274,20 +274,7 @@ func sortedKeys(m map[string]string) []string {
 
 // printConfigAsInputShape emits the parsed config in the original JSON input shape.
 func printConfigAsInputShape(w io.Writer, cfg config.Config) error {
-	raw := struct {
-		Secrets  map[string]string `json:"secrets"`
-		Optional []string          `json:"optional,omitempty"`
-	}{Secrets: make(map[string]string, len(cfg.Secrets))}
-
-	for env, entry := range cfg.Secrets {
-		raw.Secrets[env] = entry.Source + ":" + entry.Ref
-		if entry.Optional {
-			raw.Optional = append(raw.Optional, env)
-		}
-	}
-	sort.Strings(raw.Optional)
-
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(raw)
+	return enc.Encode(cfg)
 }

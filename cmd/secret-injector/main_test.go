@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kahlstrm/secret-injector/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -182,15 +183,28 @@ func TestValidateCmd_WithVarSubstitution(t *testing.T) {
 		return cmd.Run(context.Background(), []string{
 			"app",
 			"validate",
-			"--config", `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`,
+			"--config", `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db"}}}`,
 			"--var", "STAGE=prod",
 			"--debug",
 		})
 	})
 
 	require.NoError(t, err)
-	assert.Contains(t, stdout, `"X": "aws_ssm:/app/prod/db"`)
+	assert.Contains(t, stdout, `"source": "aws_ssm"`)
+	assert.Contains(t, stdout, `"ref": "/app/prod/db"`)
 	assert.Empty(t, stderr)
+}
+
+func TestPrintConfigAsInputShape_IncludesOptionalOnEntry(t *testing.T) {
+	var output bytes.Buffer
+	cfg := config.Config{Secrets: config.Secrets{
+		"API_KEY": {Source: "aws_ssm", Ref: "/app/api-key", Optional: true},
+	}}
+
+	err := printConfigAsInputShape(&output, cfg)
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"secrets":{"API_KEY":{"source":"aws_ssm","ref":"/app/api-key","optional":true}}}`, output.String())
 }
 
 func TestValidateCmd_AllowsUnusedVar(t *testing.T) {
@@ -200,7 +214,7 @@ func TestValidateCmd_AllowsUnusedVar(t *testing.T) {
 		return cmd.Run(context.Background(), []string{
 			"app",
 			"validate",
-			"--config", `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`,
+			"--config", `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db"}}}`,
 			"--var", "STAGE=prod",
 			"--var", "EXTRA=value",
 		})
@@ -217,7 +231,7 @@ func TestValidateCmd_MissingVarFails(t *testing.T) {
 	err := cmd.Run(context.Background(), []string{
 		"app",
 		"validate",
-		"--config", `{"secrets":{"X":"aws_ssm:/app/{{.STAGE}}/db"}}`,
+		"--config", `{"secrets":{"X":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db"}}}`,
 	})
 
 	require.Error(t, err)
@@ -230,7 +244,7 @@ func TestValidateCmd_UnknownSourceFails(t *testing.T) {
 	err := cmd.Run(context.Background(), []string{
 		"app",
 		"validate",
-		"--config", `{"secrets":{"X":"custom:/app/db"}}`,
+		"--config", `{"secrets":{"X":{"source":"custom","ref":"/app/db"}}}`,
 	})
 
 	require.Error(t, err)
@@ -258,7 +272,7 @@ func TestValidateCmd_ConfigFile(t *testing.T) {
 	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	err := os.WriteFile(configPath, []byte("secrets:\n  X: aws_ssm:/app/{{.STAGE}}/db\n"), 0o600)
+	err := os.WriteFile(configPath, []byte("secrets:\n  X:\n    source: aws_ssm\n    ref: /app/{{.STAGE}}/db\n"), 0o600)
 	require.NoError(t, err)
 
 	stdout, stderr, runErr := captureOutput(t, func() error {
@@ -272,7 +286,7 @@ func TestValidateCmd_ConfigFile(t *testing.T) {
 	})
 
 	require.NoError(t, runErr)
-	assert.Contains(t, stdout, `"X": "aws_ssm:/app/prod/db"`)
+	assert.Contains(t, stdout, `"ref": "/app/prod/db"`)
 	assert.Empty(t, stderr)
 }
 
@@ -281,7 +295,7 @@ func TestValidateCmd_ConfigFileStdin(t *testing.T) {
 
 	stdinR, stdinW, err := os.Pipe()
 	require.NoError(t, err)
-	_, err = stdinW.WriteString("secrets:\n  X: aws_ssm:/app/{{.STAGE}}/db\n")
+	_, err = stdinW.WriteString("secrets:\n  X:\n    source: aws_ssm\n    ref: /app/{{.STAGE}}/db\n")
 	require.NoError(t, err)
 	require.NoError(t, stdinW.Close())
 
@@ -305,7 +319,7 @@ func TestValidateCmd_ConfigFileStdin(t *testing.T) {
 	})
 
 	require.NoError(t, runErr)
-	assert.Contains(t, stdout, `"X": "aws_ssm:/app/prod/db"`)
+	assert.Contains(t, stdout, `"ref": "/app/prod/db"`)
 	assert.Empty(t, stderr)
 }
 
@@ -321,7 +335,7 @@ func TestValidateCmd_RejectsConfigAndConfigFileTogether(t *testing.T) {
 	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	err := os.WriteFile(configPath, []byte("secrets:\n  X: aws_ssm:/app/db\n"), 0o600)
+	err := os.WriteFile(configPath, []byte("secrets:\n  X:\n    source: aws_ssm\n    ref: /app/db\n"), 0o600)
 	require.NoError(t, err)
 
 	err = cmd.Run(context.Background(), []string{
@@ -340,7 +354,7 @@ func TestExecCmd_NoCommand(t *testing.T) {
 	}
 
 	// exec with config but no command should error
-	err := cmd.Run(context.Background(), []string{"app", "exec", "--config", `{"FOO":"aws_ssm:/test"}`})
+	err := cmd.Run(context.Background(), []string{"app", "exec", "--config", `{"secrets":{}}`})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no command specified")
 }

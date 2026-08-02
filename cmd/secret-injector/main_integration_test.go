@@ -74,7 +74,7 @@ func TestIntegration_ExecWithSSM(t *testing.T) {
 
 	binary := buildBinary(t)
 
-	configJSON := `{"secrets":{"DB_PASSWORD":"aws_ssm:/exec-test/db-password","API_KEY":"aws_ssm:/exec-test/api-key"}}`
+	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/exec-test/db-password"},"API_KEY":{"source":"aws_ssm","ref":"/exec-test/api-key"}}}`
 
 	// Run exec command that prints the injected env vars
 	cmd := exec.Command(binary, "exec", "--config", configJSON, "--", "sh", "-c", "echo $DB_PASSWORD:$API_KEY")
@@ -105,7 +105,7 @@ func TestIntegration_ExecInheritsAndOverrides(t *testing.T) {
 
 	binary := buildBinary(t)
 
-	configJSON := `{"secrets":{"OVERRIDE_VAR":"aws_ssm:/exec-test/override"}}`
+	configJSON := `{"secrets":{"OVERRIDE_VAR":{"source":"aws_ssm","ref":"/exec-test/override"}}}`
 
 	// Run with an existing OVERRIDE_VAR that should be replaced by SSM value
 	// Also test that INHERITED_VAR is preserved
@@ -135,7 +135,7 @@ func TestIntegration_ExecWithMissingParameter(t *testing.T) {
 	binary := buildBinary(t)
 
 	// Reference a parameter that doesn't exist
-	configJSON := `{"secrets":{"MISSING":"aws_ssm:/nonexistent/param"}}`
+	configJSON := `{"secrets":{"MISSING":{"source":"aws_ssm","ref":"/nonexistent/param"}}}`
 
 	cmd := exec.Command(binary, "exec", "--config", configJSON, "--", "echo", "should-not-print")
 	cmd.Env = []string{
@@ -156,7 +156,7 @@ func TestIntegration_ExecWithMissingParameter(t *testing.T) {
 func TestIntegration_ValidateWithTemplateRefs(t *testing.T) {
 	binary := buildBinary(t)
 
-	configJSON := `{"secrets":{"DB_PASSWORD":"aws_ssm:/validate-test/{{.STAGE}}/db-password"}}`
+	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/validate-test/{{.STAGE}}/db-password"}}}`
 
 	cmd := exec.Command(binary, "validate", "--config", configJSON, "--var", "STAGE=prod", "--debug")
 	var stdout, stderr bytes.Buffer
@@ -165,14 +165,14 @@ func TestIntegration_ValidateWithTemplateRefs(t *testing.T) {
 
 	err := cmd.Run()
 	require.NoError(t, err, "validate failed: stderr=%s", stderr.String())
-	assert.Contains(t, stdout.String(), `"DB_PASSWORD": "aws_ssm:/validate-test/prod/db-password"`)
+	assert.Contains(t, stdout.String(), `"ref": "/validate-test/prod/db-password"`)
 	assert.Empty(t, stderr.String())
 }
 
 func TestIntegration_ValidateWithTemplateRefsMissingVar(t *testing.T) {
 	binary := buildBinary(t)
 
-	configJSON := `{"secrets":{"DB_PASSWORD":"aws_ssm:/validate-test/{{.STAGE}}/db-password"}}`
+	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/validate-test/{{.STAGE}}/db-password"}}}`
 
 	cmd := exec.Command(binary, "validate", "--config", configJSON)
 	var stderr bytes.Buffer
@@ -193,7 +193,7 @@ func TestIntegration_FetchWithTemplateRefs(t *testing.T) {
 
 	binary := buildBinary(t)
 
-	configJSON := `{"secrets":{"DB_PASSWORD":"aws_ssm:/fetch-test/{{.STAGE}}/db-password"}}`
+	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/fetch-test/{{.STAGE}}/db-password"}}}`
 
 	cmd := exec.Command(binary, "fetch", "--config", configJSON, "--var", "STAGE=prod")
 	cmd.Env = []string{
@@ -227,7 +227,7 @@ func TestIntegration_FetchWithSecretsManager(t *testing.T) {
 
 	binary := buildBinary(t)
 
-	configJSON := `{"secrets":{"API_KEY":"aws_secretsmanager:fetch-sm-api-key"}}`
+	configJSON := `{"secrets":{"API_KEY":{"source":"aws_secretsmanager","ref":"fetch-sm-api-key"}}}`
 
 	cmd := exec.Command(binary, "fetch", "--config", configJSON)
 	cmd.Env = []string{
@@ -263,7 +263,7 @@ func TestIntegration_FetchWithMixedAWSBackends(t *testing.T) {
 
 	binary := buildBinary(t)
 
-	configJSON := `{"secrets":{"DB_PASSWORD":"aws_ssm:/fetch-mixed/db-password","API_KEY":"aws_secretsmanager:fetch-mixed-api-key"}}`
+	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/fetch-mixed/db-password"},"API_KEY":{"source":"aws_secretsmanager","ref":"fetch-mixed-api-key"}}}`
 
 	cmd := exec.Command(binary, "fetch", "--config", configJSON)
 	cmd.Env = []string{
@@ -293,7 +293,7 @@ func TestIntegration_ExecWithTemplateRefs(t *testing.T) {
 
 	binary := buildBinary(t)
 
-	configJSON := `{"secrets":{"API_KEY":"aws_ssm:/exec-template/{{.STAGE}}/api-key"}}`
+	configJSON := `{"secrets":{"API_KEY":{"source":"aws_ssm","ref":"/exec-template/{{.STAGE}}/api-key"}}}`
 
 	cmd := exec.Command(binary, "exec", "--config", configJSON, "--var", "STAGE=prod", "--", "sh", "-c", "echo $API_KEY")
 	cmd.Env = []string{
