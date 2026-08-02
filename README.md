@@ -2,6 +2,8 @@
 
 `secret-injector` resolves secrets from AWS and exposes them as environment variables to a child process. It can also validate configurations or print resolved values for CI and shell workflows.
 
+The project intentionally focuses on one-shot secret resolution. Long-running synchronization, rotation monitoring, operators, and service-level observability are outside its scope.
+
 Supported backends:
 
 - AWS Systems Manager Parameter Store (`aws_ssm`)
@@ -213,7 +215,7 @@ make lint     # Run golangci-lint
 make itest    # Run integration tests with Docker
 ```
 
-See the [release runbook](docs/release.md) for release and artifact verification details. Remaining planned work is tracked in the [roadmap](docs/roadmap.md).
+See the [release runbook](docs/release.md) for release and artifact verification details. Concrete future work is tracked in [GitHub Issues](https://github.com/kahlstrm/secret-injector/issues).
 
 ## License
 
