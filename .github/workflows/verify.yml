@@ -89,6 +89,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          # Keep integration-only dependencies out of the unit-test cache key.
+          cache-dependency-path: go.mod
 
       - name: Verify Docker availability
         run: docker version
