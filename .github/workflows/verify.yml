@@ -72,18 +72,21 @@ jobs:
           base_size=$(stat -c %s "$RUNNER_TEMP/secret-injector-base")
           head_size=$(stat -c %s bin/secret-injector)
           delta=$((head_size - base_size))
-          printf -v signed_delta '%+d' "$delta"
+          base_display=$(awk -v bytes="$base_size" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
+          head_display=$(awk -v bytes="$head_size" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
+          delta_display=$(awk -v bytes="$delta" 'BEGIN { printf "%+.2f KiB", bytes / 1024 }')
+          percent_display=$(awk -v delta="$delta" -v base="$base_size" 'BEGIN { printf "%+.2f%%", delta * 100 / base }')
 
           {
             echo '### Release binary size'
             echo
-            echo '| Revision | Bytes |'
+            echo '| Revision | Size |'
             echo '| --- | ---: |'
-            echo "| Base ($BASE_REF) | $base_size |"
-            echo "| PR | $head_size |"
-            echo "| Change | $signed_delta |"
+            echo "| Base ($BASE_REF) | $base_display |"
+            echo "| PR | $head_display |"
+            echo "| Change | $delta_display ($percent_display) |"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice title=Release binary size::$head_size bytes ($signed_delta bytes)"
+          echo "::notice title=Release binary size::$head_display ($delta_display, $percent_display)"
 
           jq -n \
             --argjson base_size "$base_size" \
