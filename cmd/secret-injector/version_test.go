@@ -3,6 +3,7 @@ package main
 import (
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -25,6 +26,48 @@ func TestBuildVersion(t *testing.T) {
 	date = "2026-02-28T00:00:00Z"
 
 	assert.Equal(t, "1.2.3 (commit=abc123 date=2026-02-28T00:00:00Z)", buildVersion())
+}
+
+func TestResolveVersion(t *testing.T) {
+	moduleInfo := &debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}}
+
+	tests := []struct {
+		name          string
+		linkerVersion string
+		info          *debug.BuildInfo
+		want          string
+	}{
+		{
+			name:          "module installed binary",
+			linkerVersion: "dev",
+			info:          moduleInfo,
+			want:          "1.2.3",
+		},
+		{
+			name:          "development build without module version",
+			linkerVersion: "dev",
+			info:          &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}},
+			want:          "dev",
+		},
+		{
+			name:          "module pseudo-version",
+			linkerVersion: "dev",
+			info:          &debug.BuildInfo{Main: debug.Module{Version: "v1.2.4-0.20260802120000-abc123def456"}},
+			want:          "1.2.4-0.20260802120000-abc123def456",
+		},
+		{
+			name:          "linker metadata wins",
+			linkerVersion: "2.0.0",
+			info:          moduleInfo,
+			want:          "2.0.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, resolveVersion(tt.linkerVersion, tt.info))
+		})
+	}
 }
 
 func TestVersionFlag_WithBuildMetadata(t *testing.T) {
