@@ -186,7 +186,7 @@ jobs:
       - name: Prepare smoke build metadata
         run: |
           {
-            echo "SMOKE_VERSION=dev"
+            echo "SMOKE_VERSION=smoke"
             echo "SMOKE_COMMIT=${GITHUB_SHA::7}"
             echo "SMOKE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_ENV"
