@@ -39,6 +39,35 @@ jobs:
       - name: Build binary
         run: make build
 
+      - name: Compare release binary size
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          base_dir="$RUNNER_TEMP/binary-size-base"
+          mkdir "$base_dir"
+          git archive "$BASE_SHA" | tar -x -C "$base_dir"
+
+          CGO_ENABLED=0 go -C "$base_dir" build -ldflags="-s -w" -o "$RUNNER_TEMP/secret-injector-base" ./cmd/secret-injector
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o "$RUNNER_TEMP/secret-injector-head" ./cmd/secret-injector
+
+          base_size=$(stat -c %s "$RUNNER_TEMP/secret-injector-base")
+          head_size=$(stat -c %s "$RUNNER_TEMP/secret-injector-head")
+          delta=$((head_size - base_size))
+          printf -v signed_delta '%+d' "$delta"
+
+          {
+            echo '### Release binary size'
+            echo
+            echo '| Revision | Bytes |'
+            echo '| --- | ---: |'
+            echo "| Base | $base_size |"
+            echo "| PR | $head_size |"
+            echo "| Change | $signed_delta |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Release binary size::$head_size bytes ($signed_delta bytes)"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
