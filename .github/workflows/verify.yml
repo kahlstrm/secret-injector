@@ -27,6 +27,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Setup GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.12.7
+          install-only: true
+
       - name: Verify formatting
         run: make fmt && git diff --exit-code
 
@@ -36,8 +42,15 @@ jobs:
       - name: Run unit tests
         run: make test
 
-      - name: Build binary
-        run: make build
+      - name: Build release binary
+        run: |
+          mkdir -p bin
+          GOOS=linux GOARCH=amd64 goreleaser build \
+            --single-target \
+            --snapshot \
+            --clean \
+            --id secret-injector \
+            --output "$PWD/bin/secret-injector"
 
       - name: Compare release binary size
         if: ${{ github.event_name == 'pull_request' }}
@@ -47,14 +60,20 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE_REF"
           base_sha=$(git rev-parse FETCH_HEAD)
           base_dir="$RUNNER_TEMP/binary-size-base"
-          mkdir "$base_dir"
-          git archive "$base_sha" | tar -x -C "$base_dir"
+          git worktree add --detach "$base_dir" "$base_sha"
 
-          CGO_ENABLED=0 go -C "$base_dir" build -ldflags="-s -w" -o "$RUNNER_TEMP/secret-injector-base" ./cmd/secret-injector
-          CGO_ENABLED=0 go build -ldflags="-s -w" -o "$RUNNER_TEMP/secret-injector-head" ./cmd/secret-injector
+          (
+            cd "$base_dir"
+            GOOS=linux GOARCH=amd64 goreleaser build \
+              --single-target \
+              --snapshot \
+              --clean \
+              --id secret-injector \
+              --output "$RUNNER_TEMP/secret-injector-base"
+          )
 
           base_size=$(stat -c %s "$RUNNER_TEMP/secret-injector-base")
-          head_size=$(stat -c %s "$RUNNER_TEMP/secret-injector-head")
+          head_size=$(stat -c %s bin/secret-injector)
           delta=$((head_size - base_size))
           printf -v signed_delta '%+d' "$delta"
 
