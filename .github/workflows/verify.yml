@@ -148,9 +148,11 @@ jobs:
 
       - name: Prepare smoke build metadata
         run: |
-          echo "SMOKE_VERSION=dev" >> "$GITHUB_ENV"
-          echo "SMOKE_COMMIT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-          echo "SMOKE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          {
+            echo "SMOKE_VERSION=dev"
+            echo "SMOKE_COMMIT=${GITHUB_SHA::7}"
+            echo "SMOKE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_ENV"
 
       - name: Build binary for container image
         run: CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) go build -ldflags "-X main.version=${SMOKE_VERSION} -X main.commit=${SMOKE_COMMIT} -X main.date=${SMOKE_DATE}" -o secret-injector ./cmd/secret-injector
