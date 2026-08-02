@@ -42,12 +42,13 @@ jobs:
       - name: Compare release binary size
         if: ${{ github.event_name == 'pull_request' }}
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.repository.default_branch }}
         run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          base_sha=$(git rev-parse FETCH_HEAD)
           base_dir="$RUNNER_TEMP/binary-size-base"
           mkdir "$base_dir"
-          git archive "$BASE_SHA" | tar -x -C "$base_dir"
+          git archive "$base_sha" | tar -x -C "$base_dir"
 
           CGO_ENABLED=0 go -C "$base_dir" build -ldflags="-s -w" -o "$RUNNER_TEMP/secret-injector-base" ./cmd/secret-injector
           CGO_ENABLED=0 go build -ldflags="-s -w" -o "$RUNNER_TEMP/secret-injector-head" ./cmd/secret-injector
@@ -62,11 +63,26 @@ jobs:
             echo
             echo '| Revision | Bytes |'
             echo '| --- | ---: |'
-            echo "| Base | $base_size |"
+            echo "| Base ($BASE_REF) | $base_size |"
             echo "| PR | $head_size |"
             echo "| Change | $signed_delta |"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice title=Release binary size::$head_size bytes ($signed_delta bytes)"
+
+          jq -n \
+            --argjson base_size "$base_size" \
+            --argjson head_size "$head_size" \
+            '{base_size: $base_size, head_size: $head_size}' \
+            > "$RUNNER_TEMP/binary-size-report.json"
+
+      - name: Upload binary-size report
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: binary-size-report
+          path: ${{ runner.temp }}/binary-size-report.json
+          if-no-files-found: error
+          retention-days: 1
 
   lint:
     name: Lint
