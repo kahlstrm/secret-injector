@@ -68,7 +68,11 @@ jobs:
 
             const delta = headSize - baseSize;
             const significant = Math.abs(delta) >= 100 * 1024 && Math.abs(delta) * 100 >= baseSize;
-            const signedDelta = delta >= 0 ? `+${delta}` : `${delta}`;
+            const formatMiB = bytes => `${(bytes / (1024 ** 2)).toFixed(2)} MiB`;
+            const formatKiBDelta = bytes =>
+              `${bytes >= 0 ? '+' : ''}${(bytes / 1024).toFixed(2)} KiB`;
+            const formatPercent = (value, base) =>
+              `${value >= 0 ? '+' : ''}${(value * 100 / base).toFixed(2)}%`;
             const issueNumber = context.payload.workflow_run.pull_requests[0].number;
             const baseRef = context.payload.repository.default_branch;
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -93,11 +97,11 @@ jobs:
             const body = `${marker}
             ### Significant release binary-size change
 
-            | Revision | Bytes |
+            | Revision | Size |
             | --- | ---: |
-            | Base (${baseRef}) | ${baseSize} |
-            | PR | ${headSize} |
-            | Change | ${signedDelta} |
+            | Base (${baseRef}) | ${formatMiB(baseSize)} |
+            | PR | ${formatMiB(headSize)} |
+            | Change | ${formatKiBDelta(delta)} (${formatPercent(delta, baseSize)}) |
 
             This exceeds the reporting threshold of 1% and 100 KiB.`;
 
