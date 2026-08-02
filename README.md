@@ -127,14 +127,14 @@ SECRET_INJECTOR_AWS_PROFILE=production \
 secret-injector exec -- ./myapp
 ```
 
-Selecting a profile this way isolates secret resolution from ordinary AWS credential, region, and configured endpoint environment variables. Credentials, region, and endpoints defined by the selected profile remain available to the injector. The child process still receives its original environment unchanged.
+Selecting a profile this way gives its credentials precedence and isolates secret resolution from ordinary AWS region and configured endpoint environment variables. Region and endpoints defined by the selected profile remain available to the injector. The child process still receives its original environment unchanged.
 
 | Flag | Environment variable | Description |
 | --- | --- | --- |
 | `--aws-profile` | `SECRET_INJECTOR_AWS_PROFILE` | Shared AWS configuration profile used for secret resolution |
 | `--aws-region` | `SECRET_INJECTOR_AWS_REGION` | Region override used for secret resolution |
 
-Flags take precedence over their environment variables. Without an injector-specific profile, the normal AWS default configuration chain remains active; a region override by itself does not isolate credentials or endpoints. Profiles that source credentials from the process environment cannot be used in isolated mode because ambient credentials are unavailable during resolution.
+Flags take precedence over their environment variables. Without an injector-specific profile, the normal AWS default configuration chain remains active; a region override by itself does not isolate endpoints.
 
 | Source | Accepted ref | AWS API access |
 | --- | --- | --- |
