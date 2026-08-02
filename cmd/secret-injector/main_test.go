@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kahlstrm/secret-injector/pkg/config"
+	"github.com/kahlstrm/secret-injector/pkg/loader"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -174,6 +175,84 @@ func TestParseVars(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestAWSOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		args    []string
+		wantAWS loader.AWSOptions
+	}{
+		{name: "empty", wantAWS: loader.AWSOptions{}},
+		{
+			name: "environment variables",
+			env: map[string]string{
+				"SECRET_INJECTOR_AWS_PROFILE": "development",
+				"SECRET_INJECTOR_AWS_REGION":  "eu-west-1",
+			},
+			wantAWS: loader.AWSOptions{Profile: "development", Region: "eu-west-1"},
+		},
+		{
+			name: "flags override environment variables",
+			env: map[string]string{
+				"SECRET_INJECTOR_AWS_PROFILE": "development",
+				"SECRET_INJECTOR_AWS_REGION":  "eu-west-1",
+			},
+			args:    []string{"--aws-profile", "production", "--aws-region", "us-east-2"},
+			wantAWS: loader.AWSOptions{Profile: "production", Region: "us-east-2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SECRET_INJECTOR_AWS_PROFILE", "")
+			t.Setenv("SECRET_INJECTOR_AWS_REGION", "")
+			for name, value := range tt.env {
+				t.Setenv(name, value)
+			}
+
+			var got loader.AWSOptions
+			cmd := &cli.Command{
+				Flags: awsFlags(),
+				Action: func(_ context.Context, command *cli.Command) error {
+					got = awsOptions(command)
+					return nil
+				},
+			}
+			err := cmd.Run(context.Background(), append([]string{"app"}, tt.args...))
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantAWS, got)
+		})
+	}
+}
+
+func TestScopeAWSConfig_IsolatesAndRestoresConnectionEnvironment(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "ambient-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret")
+	t.Setenv("AWS_PROFILE", "ambient-profile")
+	t.Setenv("AWS_REGION", "ambient-region")
+	t.Setenv("AWS_ENDPOINT_URL", "http://ambient.example")
+	t.Setenv("AWS_ENDPOINT_URL_SSM", "http://ambient-ssm.example")
+	t.Setenv("AWS_CONFIG_FILE", "/tmp/shared-config")
+
+	restore, err := scopeAWSConfig(loader.AWSOptions{Profile: "injector", Region: "eu-west-1"})
+	require.NoError(t, err)
+	assert.Equal(t, "ambient-profile", os.Getenv("AWS_PROFILE"))
+	assert.Empty(t, os.Getenv("AWS_REGION"))
+	assert.Empty(t, os.Getenv("AWS_ACCESS_KEY_ID"))
+	assert.Empty(t, os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	assert.Empty(t, os.Getenv("AWS_ENDPOINT_URL"))
+	assert.Empty(t, os.Getenv("AWS_ENDPOINT_URL_SSM"))
+	assert.Equal(t, "/tmp/shared-config", os.Getenv("AWS_CONFIG_FILE"))
+
+	require.NoError(t, restore())
+	assert.Equal(t, "ambient-key", os.Getenv("AWS_ACCESS_KEY_ID"))
+	assert.Equal(t, "ambient-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"))
+	assert.Equal(t, "ambient-profile", os.Getenv("AWS_PROFILE"))
+	assert.Equal(t, "ambient-region", os.Getenv("AWS_REGION"))
+	assert.Equal(t, "http://ambient.example", os.Getenv("AWS_ENDPOINT_URL"))
+	assert.Equal(t, "http://ambient-ssm.example", os.Getenv("AWS_ENDPOINT_URL_SSM"))
 }
 
 func TestValidateCmd_WithVarSubstitution(t *testing.T) {

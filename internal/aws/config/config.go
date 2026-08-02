@@ -8,6 +8,12 @@ import (
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 )
 
+// Options selects AWS configuration for the built-in resolvers.
+type Options struct {
+	Profile string
+	Region  string
+}
+
 // Loader lazily resolves and caches shared AWS SDK configuration.
 type Loader struct {
 	mu     sync.Mutex
@@ -46,4 +52,16 @@ func (l *Loader) Load(ctx context.Context) (aws.Config, error) {
 // LoadDefault resolves shared AWS SDK configuration for aws_* providers.
 func LoadDefault(ctx context.Context) (aws.Config, error) {
 	return awscfg.LoadDefaultConfig(ctx)
+}
+
+// Load resolves AWS configuration with explicit profile and region overrides.
+func Load(ctx context.Context, options Options) (aws.Config, error) {
+	var loadOptions []func(*awscfg.LoadOptions) error
+	if options.Profile != "" {
+		loadOptions = append(loadOptions, awscfg.WithSharedConfigProfile(options.Profile))
+	}
+	if options.Region != "" {
+		loadOptions = append(loadOptions, awscfg.WithRegion(options.Region))
+	}
+	return awscfg.LoadDefaultConfig(ctx, loadOptions...)
 }

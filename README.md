@@ -115,6 +115,27 @@ AWS_PROFILE=development AWS_REGION=eu-west-1 \
 
 AWS configuration and ref-template variables are separate concerns. Setting `AWS_REGION` configures the SDK, but a ref containing `{{.AWS_REGION}}` still requires `--var AWS_REGION="$AWS_REGION"`.
 
+### Separate AWS Configuration
+
+Use an injector-specific profile when the child process has different AWS settings, such as LocalStack credentials and endpoints:
+
+```sh
+AWS_ENDPOINT_URL=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test \
+AWS_SECRET_ACCESS_KEY=test \
+SECRET_INJECTOR_AWS_PROFILE=production \
+secret-injector exec -- ./myapp
+```
+
+Selecting a profile this way isolates secret resolution from ordinary AWS credential, region, and configured endpoint environment variables. Credentials, region, and endpoints defined by the selected profile remain available to the injector. The child process still receives its original environment unchanged.
+
+| Flag | Environment variable | Description |
+| --- | --- | --- |
+| `--aws-profile` | `SECRET_INJECTOR_AWS_PROFILE` | Shared AWS configuration profile used for secret resolution |
+| `--aws-region` | `SECRET_INJECTOR_AWS_REGION` | Region override used for secret resolution |
+
+Flags take precedence over their environment variables. Without an injector-specific profile, the normal AWS default configuration chain remains active; a region override by itself does not isolate credentials or endpoints. Profiles that source credentials from the process environment cannot be used in isolated mode because ambient credentials are unavailable during resolution.
+
 | Source | Accepted ref | AWS API access |
 | --- | --- | --- |
 | `aws_ssm` | Parameter name or ARN | `ssm:GetParameters`; fallback may use `ssm:GetParameter` |
