@@ -1,0 +1,116 @@
+name: Binary Size Comment
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  comment:
+    name: Update PR Comment
+    if: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.pull_requests[0] != null }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Find binary-size report
+        id: report
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              ...context.repo,
+              run_id: context.payload.workflow_run.id,
+              per_page: 100,
+            });
+            const report = artifacts.find(artifact => artifact.name === 'binary-size-report');
+            if (!report) {
+              core.notice('Workflow run has no binary-size report');
+              core.setOutput('available', 'false');
+              return;
+            }
+            core.setOutput('available', 'true');
+            core.setOutput('artifact-id', report.id);
+
+      - name: Download binary-size report
+        if: ${{ steps.report.outputs.available == 'true' }}
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.report.outputs.artifact-id }}
+          path: binary-size-report
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Update significant binary-size comment
+        if: ${{ steps.report.outputs.available == 'true' }}
+        uses: actions/github-script@v9
+        env:
+          REPORT_PATH: binary-size-report/binary-size-report.json
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- secret-injector-binary-size -->';
+            const report = JSON.parse(fs.readFileSync(process.env.REPORT_PATH, 'utf8'));
+            const {base_size: baseSize, head_size: headSize} = report;
+
+            for (const [name, value] of Object.entries({baseSize, headSize})) {
+              if (!Number.isSafeInteger(value) || value <= 0 || value > 1_000_000_000) {
+                core.setFailed(`Invalid ${name} in binary-size report`);
+                return;
+              }
+            }
+
+            const delta = headSize - baseSize;
+            const significant = Math.abs(delta) >= 100 * 1024 && Math.abs(delta) * 100 >= baseSize;
+            const signedDelta = delta >= 0 ? `+${delta}` : `${delta}`;
+            const issueNumber = context.payload.workflow_run.pull_requests[0].number;
+            const baseRef = context.payload.repository.default_branch;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+            const existing = comments.find(comment =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (!significant) {
+              if (existing) {
+                await github.rest.issues.deleteComment({
+                  ...context.repo,
+                  comment_id: existing.id,
+                });
+              }
+              return;
+            }
+
+            const body = `${marker}
+            ### Significant release binary-size change
+
+            | Revision | Bytes |
+            | --- | ---: |
+            | Base (${baseRef}) | ${baseSize} |
+            | PR | ${headSize} |
+            | Change | ${signedDelta} |
+
+            This exceeds the reporting threshold of 1% and 100 KiB.`;
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: issueNumber,
+                body,
+              });
+            }

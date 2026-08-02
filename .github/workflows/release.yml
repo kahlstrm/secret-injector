@@ -97,6 +97,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Setup GoReleaser
+        uses: ./.github/actions/setup-goreleaser
+
       - name: Verify Docker availability
         run: docker version
 
@@ -107,10 +110,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build release snapshot
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: v2.12.7
-          args: release --snapshot --clean --skip=publish
+        run: goreleaser release --snapshot --clean --skip=publish
         env:
           GORELEASER_CURRENT_TAG: ${{ env.RELEASE_TAG }}
 
@@ -144,6 +144,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Setup GoReleaser
+        uses: ./.github/actions/setup-goreleaser
+
       - name: Verify Docker availability
         run: docker version
 
@@ -161,10 +164,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish artifacts with GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: v2.12.7
-          args: release --clean
+        run: goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ env.RELEASE_TAG }}

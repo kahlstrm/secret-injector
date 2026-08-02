@@ -1,0 +1,11 @@
+name: Setup GoReleaser
+description: Install the repository's pinned GoReleaser version
+
+runs:
+  using: composite
+  steps:
+    - name: Install GoReleaser
+      uses: goreleaser/goreleaser-action@v6
+      with:
+        version: v2.12.7
+        install-only: true
