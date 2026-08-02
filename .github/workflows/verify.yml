@@ -59,6 +59,20 @@ jobs:
           version: v2.9.0
           args: --build-tags=integration --timeout=5m
 
+  nix-package:
+    name: Nix Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Build and test package
+        run: nix flake check --print-build-logs
+
   integration:
     name: Integration Tests
     runs-on: ubuntu-latest
