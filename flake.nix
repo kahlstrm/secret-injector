@@ -19,7 +19,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
         version = "0.0.0-dev";
         commit = self.shortRev or "dirty";
-        package = pkgs.buildGoModule {
+        basePackage = pkgs.buildGoModule {
           pname = "secret-injector";
           inherit version;
           src = ./.;
@@ -50,6 +50,11 @@
             mainProgram = "secret-injector";
           };
         };
+        package = basePackage.overrideAttrs (oldAttrs: {
+          env = oldAttrs.env // {
+            GOFLAGS = "${oldAttrs.env.GOFLAGS} -gcflags=all=-l";
+          };
+        });
       in
       {
         packages.default = package;
