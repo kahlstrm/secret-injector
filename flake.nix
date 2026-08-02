@@ -51,8 +51,8 @@
           };
         };
         package = basePackage.overrideAttrs (oldAttrs: {
-          env = oldAttrs.env // {
-            GOFLAGS = "${oldAttrs.env.GOFLAGS} -gcflags=all=-l";
+          env = (oldAttrs.env or { }) // {
+            GOFLAGS = "${oldAttrs.env.GOFLAGS or ""} -gcflags=all=-l";
           };
         });
       in
