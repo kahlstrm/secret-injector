@@ -49,7 +49,7 @@ Download archives and `checksums.txt` from [GitHub Releases](https://github.com/
 The GHCR image supports `linux/amd64` and `linux/arm64`. It is intended as a binary source for multi-stage builds:
 
 ```dockerfile
-FROM ghcr.io/kahlstrm/secret-injector:0.1.0 AS secret-injector
+FROM ghcr.io/kahlstrm/secret-injector:0.1.1 AS secret-injector
 
 FROM alpine:3.22
 COPY --from=secret-injector /secret-injector /usr/local/bin/secret-injector
