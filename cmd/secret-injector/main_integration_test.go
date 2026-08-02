@@ -20,20 +20,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testLS *testutil.LocalStackContainer
+var (
+	testBinary string
+	testLS     *testutil.LocalStackContainer
+)
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
-	var err error
+	tmpDir, err := os.MkdirTemp("", "secret-injector-integration-")
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "failed to create temp directory: %v\n", err)
+		os.Exit(1)
+	}
+	testBinary = filepath.Join(tmpDir, "secret-injector")
+	cmd := exec.Command("go", "build", "-o", testBinary, ".")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "failed to build secret-injector: %v: %s\n", err, out)
+		_ = os.RemoveAll(tmpDir)
+		os.Exit(1)
+	}
+
 	testLS, err = testutil.SetupLocalStack(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "failed to start LocalStack: %v\n", err)
+		_ = os.RemoveAll(tmpDir)
 		os.Exit(1)
 	}
 
 	code := m.Run()
 
 	_ = testLS.Terminate(ctx)
+	_ = os.RemoveAll(tmpDir)
 	os.Exit(code)
 }
 
@@ -49,19 +66,6 @@ func seedParameter(t *testing.T, ctx context.Context, client *awsssm.Client, nam
 	require.NoError(t, err)
 }
 
-// buildBinary builds secret-injector to a temp directory and returns the path.
-func buildBinary(t *testing.T) string {
-	t.Helper()
-	tmpDir := t.TempDir()
-	binary := filepath.Join(tmpDir, "secret-injector")
-
-	cmd := exec.Command("go", "build", "-o", binary, ".")
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "build failed: %s", string(out))
-
-	return binary
-}
-
 func TestIntegration_ExecWithSSM(t *testing.T) {
 	ctx := context.Background()
 	cfg := testLS.MustAWSConfig(t, ctx)
@@ -72,12 +76,10 @@ func TestIntegration_ExecWithSSM(t *testing.T) {
 	seedParameter(t, ctx, client, "/exec-test/db-password", "secret123")
 	seedParameter(t, ctx, client, "/exec-test/api-key", "key456")
 
-	binary := buildBinary(t)
-
 	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/exec-test/db-password"},"API_KEY":{"source":"aws_ssm","ref":"/exec-test/api-key"}}}`
 
 	// Run exec command that prints the injected env vars
-	cmd := exec.Command(binary, "exec", "--config", configJSON, "--", "sh", "-c", "echo $DB_PASSWORD:$API_KEY")
+	cmd := exec.Command(testBinary, "exec", "--config", configJSON, "--", "sh", "-c", "echo $DB_PASSWORD:$API_KEY")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -103,13 +105,11 @@ func TestIntegration_ExecInheritsAndOverrides(t *testing.T) {
 	// Seed a parameter that will override an existing env var
 	seedParameter(t, ctx, client, "/exec-test/override", "from-ssm")
 
-	binary := buildBinary(t)
-
 	configJSON := `{"secrets":{"OVERRIDE_VAR":{"source":"aws_ssm","ref":"/exec-test/override"}}}`
 
 	// Run with an existing OVERRIDE_VAR that should be replaced by SSM value
 	// Also test that INHERITED_VAR is preserved
-	cmd := exec.Command(binary, "exec", "--config", configJSON, "--", "sh", "-c", "echo $OVERRIDE_VAR:$INHERITED_VAR")
+	cmd := exec.Command(testBinary, "exec", "--config", configJSON, "--", "sh", "-c", "echo $OVERRIDE_VAR:$INHERITED_VAR")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -132,12 +132,10 @@ func TestIntegration_ExecWithMissingParameter(t *testing.T) {
 	ctx := context.Background()
 	endpoint := testLS.MustEndpoint(t, ctx)
 
-	binary := buildBinary(t)
-
 	// Reference a parameter that doesn't exist
 	configJSON := `{"secrets":{"MISSING":{"source":"aws_ssm","ref":"/nonexistent/param"}}}`
 
-	cmd := exec.Command(binary, "exec", "--config", configJSON, "--", "echo", "should-not-print")
+	cmd := exec.Command(testBinary, "exec", "--config", configJSON, "--", "echo", "should-not-print")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -154,11 +152,9 @@ func TestIntegration_ExecWithMissingParameter(t *testing.T) {
 }
 
 func TestIntegration_ValidateWithTemplateRefs(t *testing.T) {
-	binary := buildBinary(t)
-
 	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/validate-test/{{.STAGE}}/db-password"}}}`
 
-	cmd := exec.Command(binary, "validate", "--config", configJSON, "--var", "STAGE=prod", "--debug")
+	cmd := exec.Command(testBinary, "validate", "--config", configJSON, "--var", "STAGE=prod", "--debug")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -170,11 +166,9 @@ func TestIntegration_ValidateWithTemplateRefs(t *testing.T) {
 }
 
 func TestIntegration_ValidateWithTemplateRefsMissingVar(t *testing.T) {
-	binary := buildBinary(t)
-
 	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/validate-test/{{.STAGE}}/db-password"}}}`
 
-	cmd := exec.Command(binary, "validate", "--config", configJSON)
+	cmd := exec.Command(testBinary, "validate", "--config", configJSON)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -191,11 +185,9 @@ func TestIntegration_FetchWithTemplateRefs(t *testing.T) {
 
 	seedParameter(t, ctx, client, "/fetch-test/prod/db-password", "fetch-secret")
 
-	binary := buildBinary(t)
-
 	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/fetch-test/{{.STAGE}}/db-password"}}}`
 
-	cmd := exec.Command(binary, "fetch", "--config", configJSON, "--var", "STAGE=prod")
+	cmd := exec.Command(testBinary, "fetch", "--config", configJSON, "--var", "STAGE=prod")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -225,11 +217,9 @@ func TestIntegration_FetchWithSecretsManager(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	binary := buildBinary(t)
-
 	configJSON := `{"secrets":{"API_KEY":{"source":"aws_secretsmanager","ref":"fetch-sm-api-key"}}}`
 
-	cmd := exec.Command(binary, "fetch", "--config", configJSON)
+	cmd := exec.Command(testBinary, "fetch", "--config", configJSON)
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -261,11 +251,9 @@ func TestIntegration_FetchWithMixedAWSBackends(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	binary := buildBinary(t)
-
 	configJSON := `{"secrets":{"DB_PASSWORD":{"source":"aws_ssm","ref":"/fetch-mixed/db-password"},"API_KEY":{"source":"aws_secretsmanager","ref":"fetch-mixed-api-key"}}}`
 
-	cmd := exec.Command(binary, "fetch", "--config", configJSON)
+	cmd := exec.Command(testBinary, "fetch", "--config", configJSON)
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
@@ -291,11 +279,9 @@ func TestIntegration_ExecWithTemplateRefs(t *testing.T) {
 
 	seedParameter(t, ctx, client, "/exec-template/prod/api-key", "exec-secret")
 
-	binary := buildBinary(t)
-
 	configJSON := `{"secrets":{"API_KEY":{"source":"aws_ssm","ref":"/exec-template/{{.STAGE}}/api-key"}}}`
 
-	cmd := exec.Command(binary, "exec", "--config", configJSON, "--var", "STAGE=prod", "--", "sh", "-c", "echo $API_KEY")
+	cmd := exec.Command(testBinary, "exec", "--config", configJSON, "--var", "STAGE=prod", "--", "sh", "-c", "echo $API_KEY")
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=test",
 		"AWS_SECRET_ACCESS_KEY=test",
