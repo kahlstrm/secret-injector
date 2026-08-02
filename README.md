@@ -27,7 +27,7 @@ secrets:
 Run an application with the resolved secret:
 
 ```sh
-secret-injector exec --config-file secret-injector.yaml --var STAGE=prod -- ./myapp
+secret-injector exec --var STAGE=prod -- ./myapp
 ```
 
 `DATABASE_PASSWORD` is added to the child process environment, replacing an inherited value with the same name.
@@ -96,7 +96,6 @@ secrets:
 
 ```sh
 secret-injector validate \
-  --config-file secret-injector.yaml \
   --var STAGE=prod \
   --var AWS_REGION=eu-west-1
 ```
@@ -111,7 +110,7 @@ For example:
 
 ```sh
 AWS_PROFILE=development AWS_REGION=eu-west-1 \
-  secret-injector exec --config-file secret-injector.yaml -- ./myapp
+  secret-injector exec -- ./myapp
 ```
 
 AWS configuration and ref-template variables are separate concerns. Setting `AWS_REGION` configures the SDK, but a ref containing `{{.AWS_REGION}}` still requires `--var AWS_REGION="$AWS_REGION"`.
@@ -125,7 +124,7 @@ SSM parameters are requested with decryption enabled. Secrets Manager supports `
 
 ## Commands
 
-Every command that reads configuration accepts exactly one of:
+Commands load `./secret-injector.yaml` by default. Override it with one of:
 
 - `--config-file <path>` or `-f <path>`
 - `--config-file -` for stdin
@@ -138,7 +137,7 @@ Use repeatable `--var NAME=VALUE` flags when refs contain templates.
 Parse configuration and render ref templates without contacting AWS:
 
 ```sh
-secret-injector validate --config-file secret-injector.yaml --var STAGE=prod
+secret-injector validate --var STAGE=prod
 ```
 
 Add `--debug` to print the parsed configuration with rendered refs. It does not print resolved secret values.
@@ -149,19 +148,19 @@ Resolve and print environment variable bindings:
 
 ```sh
 # Raw KEY=VALUE lines
-secret-injector fetch --config-file secret-injector.yaml --format=env
+secret-injector fetch --format=env
 
 # JSON object
-secret-injector fetch --config-file secret-injector.yaml --format=json
+secret-injector fetch --format=json
 
 # POSIX shell-quoted exports
-secret-injector fetch --config-file secret-injector.yaml --format=export
+secret-injector fetch --format=export
 ```
 
 The default format is `env`. Use `export` rather than `env` when evaluating output in a shell:
 
 ```sh
-eval "$(secret-injector fetch --config-file secret-injector.yaml --format=export)"
+eval "$(secret-injector fetch --format=export)"
 ```
 
 ### Exec
@@ -169,7 +168,7 @@ eval "$(secret-injector fetch --config-file secret-injector.yaml --format=export
 Resolve secrets and replace the current process with a child command:
 
 ```sh
-secret-injector exec --config-file secret-injector.yaml -- ./myapp --flag value
+secret-injector exec -- ./myapp --flag value
 ```
 
 The `--` delimiter separates secret-injector options from the child command and its arguments.
