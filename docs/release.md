@@ -17,7 +17,7 @@
 2. Pull latest `main` locally.
 3. Confirm release notes scope from commits since last tag.
 4. Pick the next SemVer version.
-5. Optional local preflight: `make release-dry-run`.
+5. Optional local preflight: `make release-dry-run`. This requires Docker with `linux/amd64` and `linux/arm64` execution support, and builds and validates the complete GoReleaser snapshot without publishing.
 
 ## Start a release
 
@@ -36,8 +36,10 @@ Tag pushes trigger `.github/workflows/release.yml`, which:
 
 - validates the tag format as SemVer,
 - reruns format, vet, lint, unit tests, and integration tests,
+- builds a non-publishing GoReleaser snapshot and validates its checksums, archive matrix and contents, Linux images on both architectures, build metadata consistency, and Docker `COPY --from` flow,
 - creates release binaries and `checksums.txt`,
 - publishes the versioned GHCR multi-arch image,
+- verifies that the published version tag contains `linux/amd64` and `linux/arm64`,
 - updates the GHCR `latest` tag for stable releases,
 - creates/updates a draft GitHub Release.
 
