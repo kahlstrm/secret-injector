@@ -17,12 +17,14 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+const defaultConfigFile = "secret-injector.yaml"
+
 // Shared flag definitions for config input
 var (
 	flagConfigFile = &cli.StringFlag{
 		Name:      "config-file",
 		Aliases:   []string{"f"},
-		Usage:     "path to config file (use '-' for stdin)",
+		Usage:     "path to config file (default: " + defaultConfigFile + "; use '-' for stdin)",
 		TakesFile: true,
 	}
 	flagConfig = &cli.StringFlag{
@@ -204,15 +206,16 @@ func loadConfigFromInput(c *cli.Command) (config.Config, error) {
 		r = strings.NewReader(inline)
 	case path == "-":
 		r = os.Stdin
-	case path != "":
+	default:
+		if path == "" {
+			path = defaultConfigFile
+		}
 		f, err := os.Open(path)
 		if err != nil {
-			return config.Config{}, err
+			return config.Config{}, fmt.Errorf("open config file %q: %w", path, err)
 		}
 		defer func() { _ = f.Close() }()
 		r = f
-	default:
-		return config.Config{}, errors.New("no config input provided")
 	}
 
 	return config.Load(r, config.WithVars(vars))

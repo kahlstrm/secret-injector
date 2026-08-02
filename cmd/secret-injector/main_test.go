@@ -268,11 +268,16 @@ func TestFetchCmd_AllowsUnusedVar(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestValidateCmd_ConfigFile(t *testing.T) {
+func TestValidateCmd_ConfigFileOverridesDefault(t *testing.T) {
 	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
 
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	err := os.WriteFile(configPath, []byte("secrets:\n  X:\n    source: aws_ssm\n    ref: /app/{{.STAGE}}/db\n"), 0o600)
+	configDir := t.TempDir()
+	t.Chdir(configDir)
+	err := os.WriteFile("secret-injector.yaml", []byte("invalid: true\n"), 0o600)
+	require.NoError(t, err)
+
+	configPath := filepath.Join(configDir, "config.yaml")
+	err = os.WriteFile(configPath, []byte("secrets:\n  X:\n    source: aws_ssm\n    ref: /app/{{.STAGE}}/db\n"), 0o600)
 	require.NoError(t, err)
 
 	stdout, stderr, runErr := captureOutput(t, func() error {
@@ -323,12 +328,49 @@ func TestValidateCmd_ConfigFileStdin(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestValidateCmd_RequiresConfigInput(t *testing.T) {
+func TestValidateCmd_DefaultConfigFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+	err := os.WriteFile("secret-injector.yaml", []byte("secrets:\n  X:\n    source: aws_ssm\n    ref: /app/{{.STAGE}}/db\n"), 0o600)
+	require.NoError(t, err)
+
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+	stdout, stderr, runErr := captureOutput(t, func() error {
+		return cmd.Run(context.Background(), []string{
+			"app",
+			"validate",
+			"--var", "STAGE=prod",
+			"--debug",
+		})
+	})
+
+	require.NoError(t, runErr)
+	assert.Contains(t, stdout, `"ref": "/app/prod/db"`)
+	assert.Empty(t, stderr)
+}
+
+func TestValidateCmd_MissingDefaultConfigFile(t *testing.T) {
+	t.Chdir(t.TempDir())
 	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
 
 	err := cmd.Run(context.Background(), []string{"app", "validate"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no config input provided")
+	assert.Contains(t, err.Error(), "secret-injector.yaml")
+}
+
+func TestValidateCmd_InlineConfigOverridesDefault(t *testing.T) {
+	t.Chdir(t.TempDir())
+	err := os.WriteFile("secret-injector.yaml", []byte("invalid: true\n"), 0o600)
+	require.NoError(t, err)
+
+	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+	err = cmd.Run(context.Background(), []string{
+		"app",
+		"validate",
+		"--config", `{"secrets":{}}`,
+	})
+
+	require.NoError(t, err)
 }
 
 func TestValidateCmd_RejectsConfigAndConfigFileTogether(t *testing.T) {
