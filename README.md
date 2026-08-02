@@ -1,86 +1,52 @@
 # secret-injector
 
-Static Go binary for loading secrets from cloud services into environment variables.
+`secret-injector` resolves secrets from AWS and exposes them as environment variables to a child process. It can also validate configurations or print resolved values for CI and shell workflows.
 
-## Overview
+Supported backends:
 
-Maps environment variable names to cloud secret locations via configuration files (YAML first-class, JSON also supported). Loads secrets and injects them as environment variables for downstream processes.
+- AWS Systems Manager Parameter Store (`aws_ssm`)
+- AWS Secrets Manager (`aws_secretsmanager`)
 
-## Use Cases
+## Quick Start
 
-- Development Docker containers
-- CI/CD pipelines
-- Kubernetes init containers
-- Static binary distribution
+Install the CLI:
 
-## Configuration Format
+```sh
+go install github.com/kahlstrm/secret-injector/cmd/secret-injector@latest
+```
+
+Create `secret-injector.yaml`:
 
 ```yaml
 secrets:
   DATABASE_PASSWORD:
     source: aws_ssm
     ref: /app/{{.STAGE}}/db/password
-  API_KEY:
-    source: aws_ssm
-    ref: /app/{{.STAGE}}/api/key
-    optional: true
-  REGION_KEY:
-    source: aws_ssm
-    ref: /shared/{{printf "%s" .AWS_REGION}}/api
 ```
 
-- Each key under `secrets` is the environment variable to populate.
-- `source` selects the secret backend and `ref` identifies the value to load.
-- Entries are required by default; set `optional: true` to allow a missing value.
-- Missing optional secrets emit warnings and are skipped.
-- Config is parsed as YAML; JSON input is accepted because JSON is valid YAML.
-- `{{.VAR}}` placeholders in refs are resolved from repeatable `--var NAME=VALUE` flags.
-- Refs use Go `text/template`, so simple pipelines/conditionals are supported.
-- Missing placeholders fail validation.
+Run an application with the resolved secret:
 
-### Ref Template Rules
-
-- Ref values are rendered with Go `text/template`.
-- Variable values come from `--var NAME=VALUE` flags and are available as `.NAME`.
-- Missing variables fail with a template execution error.
-- Extra `--var` values are ignored.
-- Legacy `${VAR}` syntax is not expanded.
-
-Examples:
-
-```yaml
-secrets:
-  DB_PASSWORD:
-    source: aws_ssm
-    ref: /app/{{.STAGE}}/db/password
-  API_KEY:
-    source: aws_ssm
-    ref: /app/{{if eq .STAGE "prod"}}stable{{else}}preview{{end}}/api-key
-  REGION_KEY:
-    source: aws_ssm
-    ref: /shared/{{.AWS_REGION | printf "%s"}}/key
+```sh
+secret-injector exec --var STAGE=prod -- ./myapp
 ```
 
-## Supported Backends
-
-- AWS SSM Parameter Store (`aws_ssm`)
-- AWS Secrets Manager (`aws_secretsmanager`)
+`DATABASE_PASSWORD` is added to the child process environment, replacing an inherited value with the same name.
 
 ## Installation
 
-### `go install`
+### Go
 
 ```sh
 go install github.com/kahlstrm/secret-injector/cmd/secret-injector@latest
 ```
 
-### GitHub Releases
+### Prebuilt Binaries
 
-Download prebuilt archives and checksums from [GitHub Releases](https://github.com/kahlstrm/secret-injector/releases).
+Download archives and `checksums.txt` from [GitHub Releases](https://github.com/kahlstrm/secret-injector/releases). Release binaries are available for Linux and macOS on `amd64` and `arm64`.
 
-### Container image
+### Container Image
 
-The GHCR image supports `linux/amd64` and `linux/arm64`. Use it as a binary source in multi-stage Docker builds:
+The GHCR image supports `linux/amd64` and `linux/arm64`. It is intended as a binary source for multi-stage builds:
 
 ```dockerfile
 FROM ghcr.io/kahlstrm/secret-injector:0.1.0 AS secret-injector
@@ -89,173 +55,165 @@ FROM alpine:3.22
 COPY --from=secret-injector /secret-injector /usr/local/bin/secret-injector
 ```
 
-Stable releases also update `ghcr.io/kahlstrm/secret-injector:latest`. Prereleases do not update `latest`; use a version tag for reproducible builds.
+Stable releases update `ghcr.io/kahlstrm/secret-injector:latest`. Use a version tag for reproducible builds. Prereleases do not update `latest`.
 
-## Release Process
+## Configuration
 
-See the [release runbook](docs/release.md) for the release contract, artifact publication flow, and verification checklist.
+Configuration is YAML or JSON with a required `secrets` map. Each key is the environment variable to populate.
 
-## Usage
-
-Provide config with exactly one of:
-
-- `--config-file <path>` (or `--config-file -` for stdin)
-- `--config '<inline YAML/JSON>'`
-
-### Version Information
-
-```sh
-# Print embedded build metadata
-secret-injector --version
-
-# Build with explicit metadata
-make build VERSION=v0.1.0 COMMIT=$(git rev-parse --short HEAD)
+```yaml
+secrets:
+  DATABASE_PASSWORD:
+    source: aws_ssm
+    ref: /app/{{.STAGE}}/db/password
+  API_KEY:
+    source: aws_secretsmanager
+    ref: app/{{.STAGE}}/api-key
+    optional: true
 ```
 
-Release/static builds should always use `CGO_ENABLED=0` (the repository `Makefile` enforces this by default).
+| Field | Required | Description |
+| --- | --- | --- |
+| `source` | Yes | Backend identifier: `aws_ssm` or `aws_secretsmanager` |
+| `ref` | Yes | Backend-specific parameter or secret identifier |
+| `optional` | No | Skip a missing value with a warning instead of failing; defaults to `false` |
 
-### Validate Configuration
+Required entries fail resolution when their refs are missing. Optional entries are omitted and produce a warning on stderr. Unknown fields, invalid environment variable names, unsupported sources, and empty refs are rejected during validation.
 
-```sh
-# Validate config file
-secret-injector validate --config-file secrets.yaml
+### Ref Templates
 
-# Validate refs with required variables
-secret-injector validate --config-file secrets.yaml --var STAGE=prod
+Refs are Go `text/template` expressions. Values come only from repeatable `--var NAME=VALUE` flags:
 
-# Validate with debug output
-secret-injector validate --config-file secrets.yaml --debug
-
-# Validate from stdin
-cat secrets.yaml | secret-injector validate --config-file -
+```yaml
+secrets:
+  API_KEY:
+    source: aws_secretsmanager
+    ref: app/{{if eq .STAGE "prod"}}stable{{else}}preview{{end}}/api-key
+  REGION_KEY:
+    source: aws_ssm
+    ref: /shared/{{.AWS_REGION}}/key
 ```
-
-Example (`--debug`) with a conditional ref template:
 
 ```sh
 secret-injector validate \
-  --config '{"secrets":{"API_KEY":{"source":"aws_ssm","ref":"/app/{{if eq .STAGE \"prod\"}}stable{{else}}preview{{end}}/api-key"}}}' \
   --var STAGE=prod \
-  --debug
-
-# output:
-# {
-#   "secrets": {
-#     "API_KEY": {
-#       "source": "aws_ssm",
-#       "ref": "/app/stable/api-key"
-#     }
-#   }
-# }
+  --var AWS_REGION=eu-west-1
 ```
 
-### Fetch Secrets
+Missing template variables and refs that become empty after rendering fail validation. Environment variables are not imported into template data automatically; pass them explicitly, for example `--var AWS_REGION="$AWS_REGION"`.
+
+## AWS Setup
+
+The built-in providers use the AWS SDK default configuration chain. Standard AWS environment variables, shared configuration and credential files, SSO profiles, web identity, and workload IAM roles work without project-specific flags.
+
+For example:
 
 ```sh
-# Fetch and output as KEY=VALUE lines (default)
-secret-injector fetch --config-file secrets.yaml --var STAGE=prod
-
-# Fetch and output as JSON
-secret-injector fetch --config-file secrets.yaml --var STAGE=prod --format=json
-
-# Fetch as shell export statements (for sourcing)
-secret-injector fetch --config-file secrets.yaml --var STAGE=prod --format=export
-
-# Source secrets into current shell
-eval "$(secret-injector fetch --config-file secrets.yaml --var STAGE=prod --format=export)"
-
-# Fetch from inline config
-secret-injector fetch --config '{"secrets":{"API_KEY":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/key"}}}' --var STAGE=prod
+AWS_PROFILE=development AWS_REGION=eu-west-1 \
+  secret-injector exec -- ./myapp
 ```
 
-### Execute with Secrets
+AWS configuration and ref-template variables are separate concerns. Setting `AWS_REGION` configures the SDK, but a ref containing `{{.AWS_REGION}}` still requires `--var AWS_REGION="$AWS_REGION"`.
+
+| Source | Accepted ref | AWS API access |
+| --- | --- | --- |
+| `aws_ssm` | Parameter name or ARN | `ssm:GetParameters`; fallback may use `ssm:GetParameter` |
+| `aws_secretsmanager` | Secret name, ARN, or partial ARN | `secretsmanager:BatchGetSecretValue`; fallback may use `secretsmanager:GetSecretValue` |
+
+SSM parameters are requested with decryption enabled. Secrets Manager supports `SecretString`; binary secrets are rejected. Customer-managed KMS keys may also require `kms:Decrypt`.
+
+## Commands
+
+Commands load `./secret-injector.yaml` by default. Override it with one of:
+
+- `--config-file <path>` or `-f <path>`
+- `--config-file -` for stdin
+- `--config '<inline YAML or JSON>'`
+
+Use repeatable `--var NAME=VALUE` flags when refs contain templates.
+
+### Validate
+
+Parse configuration and render ref templates without contacting AWS:
 
 ```sh
-# Load secrets and run a command
-secret-injector exec --config-file secrets.yaml --var STAGE=prod -- ./myapp --flag arg
+secret-injector validate --var STAGE=prod
+```
 
-# Secrets are injected as environment variables
-secret-injector exec --config-file secrets.yaml --var STAGE=prod -- printenv DATABASE_PASSWORD
+Add `--debug` to print the parsed configuration with rendered refs. It does not print resolved secret values.
 
-# With inline config
-secret-injector exec --config '{"secrets":{"DB_PASS":{"source":"aws_ssm","ref":"/app/{{.STAGE}}/db/pass"}}}' --var STAGE=prod -- ./myapp
+### Fetch
+
+Resolve and print environment variable bindings:
+
+```sh
+# Raw KEY=VALUE lines
+secret-injector fetch --format=env
+
+# JSON object
+secret-injector fetch --format=json
+
+# POSIX shell-quoted exports
+secret-injector fetch --format=export
+```
+
+The default format is `env`. Use `export` rather than `env` when evaluating output in a shell:
+
+```sh
+eval "$(secret-injector fetch --format=export)"
+```
+
+### Exec
+
+Resolve secrets and replace the current process with a child command:
+
+```sh
+secret-injector exec -- ./myapp --flag value
+```
+
+The `--` delimiter separates secret-injector options from the child command and its arguments.
+
+### Version
+
+```sh
+secret-injector --version
 ```
 
 ## Library Usage
 
+The configuration and loader packages can be used directly:
+
 ```go
 import (
-    "github.com/kahlstrm/secret-injector/pkg/config"
-    "github.com/kahlstrm/secret-injector/pkg/loader"
+	"github.com/kahlstrm/secret-injector/pkg/config"
+	"github.com/kahlstrm/secret-injector/pkg/loader"
 )
 
 cfg, err := config.Load(
-    reader,
-    config.WithVars(map[string]string{"STAGE": "prod"}),
+	reader,
+	config.WithVars(map[string]string{"STAGE": "prod"}),
 )
 if err != nil {
-    return err
+	return err
 }
+
 registry := loader.Default(nil)
 secrets, err := registry.ResolveAll(ctx, cfg)
 ```
 
-## TODO
+Custom providers can be added to `loader.New` or supplied as extras to `loader.Default`.
 
-### Core Features
+## Development
 
-- [x] Shell export mode (`--export` flag)
-- [x] Environment variable substitution in refs (`{{.VAR}}`)
-- [x] Validation for missing required variables
+```sh
+make build    # Build bin/secret-injector
+make test     # Run unit tests
+make lint     # Run golangci-lint
+make itest    # Run integration tests with Docker
+```
 
-### Correctness & Hardening
+See the [release runbook](docs/release.md) for release and artifact verification details. Concrete future work is tracked in [GitHub Issues](https://github.com/kahlstrm/secret-injector/issues).
 
-- [x] Validate environment variable names before execution or shell export
-- [x] Reject refs that render empty after template expansion
-- [x] Reject trailing YAML documents
-- [x] Preserve optional SSM not-found semantics during per-parameter fallback
+## License
 
-### AWS Implementation
-
-- [x] Secrets Manager client (`aws_secretsmanager` source)
-- [ ] Parameter versioning support (`#version=X`) (skipped for now)
-
-### Advanced Features
-
-- [ ] Secret caching
-- [ ] Kubernetes operator library interface
-- [ ] Docker init container mode
-- [ ] Health checks for secret availability
-
-### Security
-
-- [ ] Memory cleanup for loaded secrets
-- [ ] Audit logging
-- [ ] Permission validation
-- [ ] Secret rotation detection
-
-### Operational
-
-- [ ] Prometheus metrics
-- [ ] Structured logging
-- [ ] Configuration hot-reload
-
-### Release & Distribution (v1)
-
-- [x] Define release contract (SemVer tags `vX.Y.Z`, prerelease rules, supported OS/arch matrix)
-- [x] Add CLI build metadata (`version`, `commit`, `date`) exposed via `--version`
-- [x] Add CI workflow for `make fmt`, `make vet`, `make lint`, `make test`, and `make build`
-- [x] Add CI integration test job for `make itest` with Docker availability required (fail if Docker unavailable)
-- [x] Add CI Docker smoke tests (run image with `--version` and verify Docker `COPY --from` flow)
-- [x] Add GoReleaser config for binary artifacts (archives + checksums + changelog)
-- [x] Add GoReleaser Docker image publishing to GHCR (multi-arch: `linux/amd64`, `linux/arm64`)
-- [x] Add tag-triggered release workflow (`v*`) that publishes GitHub Release assets and GHCR images
-- [x] Document install paths: GitHub Releases and `go install`
-- [x] Document Docker copy-from usage for local development containers
-- [x] Add release runbook and first-cut checklist for `v0.1.0`
-
-### Testing
-
-- [x] Migrate LocalStack to testcontainers for self-contained integration tests
-- [x] Add end-to-end CLI tests for template-based refs (`validate`, `fetch`, `exec`)
-- [x] Add shared resolver integration contract tests for found/missing semantics and supported fallback paths
+[MIT](LICENSE)
