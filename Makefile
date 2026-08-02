@@ -1,4 +1,4 @@
-.PHONY: help test coverage coverhtml lint build tidy fmt vet tools itest itest-v release-dry-run
+.PHONY: help test coverage coverhtml lint build tidy fmt vet tools itest itest-v release-dry-run verify-release-artifacts
 
 # Enforce static builds/tests by default
 export CGO_ENABLED=0
@@ -27,7 +27,8 @@ help:
 	@echo "  tidy        go mod tidy"
 	@echo "  itest       Run integration tests (uses testcontainers)"
 	@echo "  itest-v     Run integration tests with verbose output"
-	@echo "  release-dry-run  Run GoReleaser snapshot without publishing"
+	@echo "  release-dry-run  Build and verify a GoReleaser snapshot without publishing"
+	@echo "  verify-release-artifacts  Verify artifacts from an existing GoReleaser build"
 
 test:
 	go test $(PKG_ALL)
@@ -65,3 +66,7 @@ itest-v:
 
 release-dry-run:
 	$(GORELEASER) release --snapshot --clean --skip=publish
+	$(MAKE) verify-release-artifacts
+
+verify-release-artifacts:
+	./scripts/verify-release-artifacts.sh
