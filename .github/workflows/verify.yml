@@ -71,7 +71,6 @@ jobs:
 
           base_size=$(stat -c %s "$RUNNER_TEMP/secret-injector-base")
           head_size=$(stat -c %s bin/secret-injector)
-          head_size=$((head_size + 200000))
           delta=$((head_size - base_size))
           printf -v signed_delta '%+d' "$delta"
 
