@@ -122,6 +122,23 @@ func TestLoad_ProfileIgnoresAmbientRegionAndEndpoints(t *testing.T) {
 	}
 }
 
+func TestLoad_ProfileWithoutRegionIsRejected(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
+aws_access_key_id = profile-key
+aws_secret_access_key = profile-secret
+`), 0o600))
+	t.Setenv("AWS_CONFIG_FILE", configPath)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+	t.Setenv("AWS_REGION", "ambient-region")
+
+	_, err := Load(context.Background(), Options{Profile: "injector"})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrRegionRequired)
+	assert.Contains(t, err.Error(), "selected AWS profile has no region")
+}
+
 func TestLoad_ProfileIgnoresAmbientEndpointSettings(t *testing.T) {
 	tests := []struct {
 		name             string

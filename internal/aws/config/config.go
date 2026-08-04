@@ -2,6 +2,8 @@ package config
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"sync"
 
@@ -14,6 +16,9 @@ type Options struct {
 	Profile string
 	Region  string
 }
+
+// ErrRegionRequired indicates that configured AWS resolution has no region.
+var ErrRegionRequired = errors.New("AWS region is required")
 
 // Loader lazily resolves and caches shared AWS SDK configuration.
 type Loader struct {
@@ -76,7 +81,11 @@ func Load(ctx context.Context, options Options) (aws.Config, error) {
 	if err != nil || options.Profile == "" {
 		return cfg, err
 	}
-	return normalizeProfileConfig(cfg, settings), nil
+	cfg = normalizeProfileConfig(cfg, settings)
+	if cfg.Region == "" {
+		return aws.Config{}, fmt.Errorf("%w: selected AWS profile has no region; set an explicit region", ErrRegionRequired)
+	}
+	return cfg, nil
 }
 
 func loadSharedProfile(ctx context.Context, name string) (awscfg.SharedConfig, error) {
