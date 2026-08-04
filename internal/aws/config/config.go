@@ -120,40 +120,22 @@ func normalizeProfileConfig(cfg aws.Config, settings profileSettings) aws.Config
 			cfg.BaseEndpoint = aws.String(settings.profile.BaseEndpoint)
 		}
 	}
+	cfg.ConfigSources = withoutEnvConfig(cfg.ConfigSources)
 	return cfg
 }
 
-// ProfileEndpoint returns the selected profile's endpoint for service.
-// The boolean reports whether an explicit profile was selected.
-func ProfileEndpoint(cfg aws.Config, service string) (*string, bool) {
-	if !hasSelectedProfile(cfg.ConfigSources) {
-		return nil, false
-	}
-	profile, _ := sharedProfile(cfg.ConfigSources)
-	settings := profileSettings{profile: profile}
-	return settings.endpoint(service), true
-}
-
-func hasSelectedProfile(sources []any) bool {
+// withoutEnvConfig drops the ambient environment source so service clients
+// resolve their endpoints from the selected profile instead of AWS_ENDPOINT_URL*.
+// Clients re-read these sources when they are constructed, so filtering the
+// loaded config is what keeps every client isolated, not only the ones we build.
+func withoutEnvConfig(sources []any) []any {
+	filtered := make([]any, 0, len(sources))
 	for _, source := range sources {
-		switch source := source.(type) {
-		case awscfg.LoadOptions:
-			return source.SharedConfigProfile != ""
-		case *awscfg.LoadOptions:
-			return source.SharedConfigProfile != ""
+		switch source.(type) {
+		case awscfg.EnvConfig, *awscfg.EnvConfig:
+			continue
 		}
+		filtered = append(filtered, source)
 	}
-	return false
-}
-
-func sharedProfile(sources []any) (awscfg.SharedConfig, bool) {
-	for _, source := range sources {
-		switch source := source.(type) {
-		case awscfg.SharedConfig:
-			return source, true
-		case *awscfg.SharedConfig:
-			return *source, true
-		}
-	}
-	return awscfg.SharedConfig{}, false
+	return filtered
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
-	awsconfig "github.com/kahlstrm/secret-injector/internal/aws/config"
 	"github.com/kahlstrm/secret-injector/pkg/util/uniq"
 )
 
@@ -40,13 +39,7 @@ func NewResolver(client ssmClient, onWarning func(context.Context, string)) *Res
 
 // NewResolverFromAWSConfig constructs an SSM resolver from shared AWS SDK config.
 func NewResolverFromAWSConfig(cfg aws.Config, onWarning func(context.Context, string)) *Resolver {
-	var options []func(*awsssm.Options)
-	if endpoint, selected := awsconfig.ProfileEndpoint(cfg, awsssm.ServiceID); selected {
-		options = append(options, func(options *awsssm.Options) {
-			options.BaseEndpoint = endpoint
-		})
-	}
-	return &Resolver{client: awsssm.NewFromConfig(cfg, options...), onWarning: onWarning}
+	return &Resolver{client: awsssm.NewFromConfig(cfg), onWarning: onWarning}
 }
 
 // Resolve implements batch-first secret resolution for SSM.

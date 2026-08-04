@@ -10,7 +10,6 @@ import (
 	awssecretsmanager "github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	smtypes "github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
 	"github.com/aws/smithy-go"
-	awsconfig "github.com/kahlstrm/secret-injector/internal/aws/config"
 	"github.com/kahlstrm/secret-injector/pkg/util/uniq"
 )
 
@@ -39,13 +38,7 @@ func NewResolver(client secretsManagerClient, onWarning func(context.Context, st
 
 // NewResolverFromAWSConfig constructs a secrets manager resolver from shared AWS SDK config.
 func NewResolverFromAWSConfig(cfg aws.Config, onWarning func(context.Context, string)) *Resolver {
-	var options []func(*awssecretsmanager.Options)
-	if endpoint, selected := awsconfig.ProfileEndpoint(cfg, awssecretsmanager.ServiceID); selected {
-		options = append(options, func(options *awssecretsmanager.Options) {
-			options.BaseEndpoint = endpoint
-		})
-	}
-	return &Resolver{client: awssecretsmanager.NewFromConfig(cfg, options...), onWarning: onWarning}
+	return &Resolver{client: awssecretsmanager.NewFromConfig(cfg), onWarning: onWarning}
 }
 
 // Resolve resolves the requested secret refs.

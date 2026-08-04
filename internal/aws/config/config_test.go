@@ -79,27 +79,47 @@ aws_secret_access_key = profile-secret
 }
 
 func TestLoad_ProfileIgnoresAmbientRegionAndEndpoints(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config")
-	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
-region = eu-west-1
-endpoint_url = http://profile.example
-aws_access_key_id = profile-key
-aws_secret_access_key = profile-secret
-`), 0o600))
-	t.Setenv("AWS_CONFIG_FILE", configPath)
-	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
-	t.Setenv("AWS_REGION", "ambient-region")
-	t.Setenv("AWS_ENDPOINT_URL", "http://ambient.example")
-	t.Setenv("AWS_ENDPOINT_URL_SSM", "http://ambient-ssm.example")
+	tests := []struct {
+		name            string
+		profileEndpoint string
+		wantEndpoint    string
+	}{
+		{
+			name:            "profile endpoint wins",
+			profileEndpoint: "endpoint_url = http://profile.example\n",
+			wantEndpoint:    "http://profile.example",
+		},
+		{
+			name:            "profile service endpoint wins",
+			profileEndpoint: "services = injector-services\n",
+			wantEndpoint:    "http://profile-ssm.example",
+		},
+		{
+			name: "profile without endpoint resolves normally",
+		},
+	}
 
-	cfg, err := Load(context.Background(), Options{Profile: "injector"})
-	require.NoError(t, err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config")
+			contents := "[profile injector]\nregion = eu-west-1\naws_access_key_id = profile-key\naws_secret_access_key = profile-secret\n" +
+				test.profileEndpoint +
+				"\n[services injector-services]\nssm =\n  endpoint_url = http://profile-ssm.example\n"
+			require.NoError(t, os.WriteFile(configPath, []byte(contents), 0o600))
+			t.Setenv("AWS_CONFIG_FILE", configPath)
+			t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+			t.Setenv("AWS_REGION", "ambient-region")
+			t.Setenv("AWS_ENDPOINT_URL", "http://ambient.example")
+			t.Setenv("AWS_ENDPOINT_URL_SSM", "http://ambient-ssm.example")
 
-	assert.Equal(t, "eu-west-1", cfg.Region)
-	assert.Equal(t, "http://profile.example", aws.ToString(cfg.BaseEndpoint))
-	endpoint, selected := ProfileEndpoint(cfg, "SSM")
-	assert.True(t, selected)
-	assert.Equal(t, "http://profile.example", aws.ToString(endpoint))
+			cfg, err := Load(context.Background(), Options{Profile: "injector"})
+			require.NoError(t, err)
+
+			assert.Equal(t, "eu-west-1", cfg.Region)
+			clientOptions := awsssm.NewFromConfig(cfg).Options()
+			assert.Equal(t, test.wantEndpoint, aws.ToString(clientOptions.BaseEndpoint))
+		})
+	}
 }
 
 func TestLoad_ProfileIgnoresAmbientEndpointSettings(t *testing.T) {
