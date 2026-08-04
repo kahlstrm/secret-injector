@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kahlstrm/secret-injector/pkg/config"
+	"github.com/kahlstrm/secret-injector/pkg/loader"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
@@ -172,6 +173,56 @@ func TestParseVars(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestAWSOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		args    []string
+		wantAWS loader.AWSOptions
+	}{
+		{name: "empty", wantAWS: loader.AWSOptions{}},
+		{
+			name: "environment variables",
+			env: map[string]string{
+				"SECRET_INJECTOR_AWS_PROFILE": "development",
+				"SECRET_INJECTOR_AWS_REGION":  "eu-west-1",
+			},
+			wantAWS: loader.AWSOptions{Profile: "development", Region: "eu-west-1"},
+		},
+		{
+			name: "flags override environment variables",
+			env: map[string]string{
+				"SECRET_INJECTOR_AWS_PROFILE": "development",
+				"SECRET_INJECTOR_AWS_REGION":  "eu-west-1",
+			},
+			args:    []string{"--aws-profile", "production", "--aws-region", "us-east-2"},
+			wantAWS: loader.AWSOptions{Profile: "production", Region: "us-east-2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SECRET_INJECTOR_AWS_PROFILE", "")
+			t.Setenv("SECRET_INJECTOR_AWS_REGION", "")
+			for name, value := range tt.env {
+				t.Setenv(name, value)
+			}
+
+			var got loader.AWSOptions
+			cmd := &cli.Command{
+				Flags: awsFlags(),
+				Action: func(_ context.Context, command *cli.Command) error {
+					got = awsOptions(command)
+					return nil
+				},
+			}
+			err := cmd.Run(context.Background(), append([]string{"app"}, tt.args...))
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantAWS, got)
 		})
 	}
 }

@@ -115,6 +115,27 @@ AWS_PROFILE=development AWS_REGION=eu-west-1 \
 
 AWS configuration and ref-template variables are separate concerns. Setting `AWS_REGION` configures the SDK, but a ref containing `{{.AWS_REGION}}` still requires `--var AWS_REGION="$AWS_REGION"`.
 
+### Separate AWS Configuration
+
+Use an injector-specific profile when the child process has different AWS settings, such as LocalStack credentials and endpoints:
+
+```sh
+AWS_ENDPOINT_URL=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test \
+AWS_SECRET_ACCESS_KEY=test \
+SECRET_INJECTOR_AWS_PROFILE=production \
+secret-injector exec -- ./myapp
+```
+
+Selecting a profile this way uses its credential chain and isolates secret resolution from ordinary AWS region and configured endpoint environment variables. Ambient static credentials are used only when the profile explicitly selects `Environment` as its credential source; a profile without a credential source can still fall back to container or instance-role credentials. Region and endpoints defined by the selected profile remain available to the injector; the profile must define a region unless `--aws-region` is set. The child process still receives its original environment unchanged.
+
+| Flag | Environment variable | Description |
+| --- | --- | --- |
+| `--aws-profile` | `SECRET_INJECTOR_AWS_PROFILE` | Shared AWS configuration profile used for secret resolution |
+| `--aws-region` | `SECRET_INJECTOR_AWS_REGION` | Region override used for secret resolution |
+
+Flags take precedence over their environment variables. Without an injector-specific profile, the normal AWS default configuration chain remains active; a region override by itself does not isolate endpoints.
+
 | Source | Accepted ref | AWS API access |
 | --- | --- | --- |
 | `aws_ssm` | Parameter name or ARN | `ssm:GetParameters`; fallback may use `ssm:GetParameter` |
@@ -202,6 +223,7 @@ secrets, err := registry.ResolveAll(ctx, cfg)
 ```
 
 Custom providers can be added to `loader.New` or supplied as extras to `loader.Default`.
+Use `loader.DefaultWithOptions` to select an AWS profile or region; it applies the same AWS isolation and validation behavior as the CLI flags.
 
 ## Development
 

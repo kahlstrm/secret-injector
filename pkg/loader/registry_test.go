@@ -3,12 +3,16 @@ package loader
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	cfgpkg "github.com/kahlstrm/secret-injector/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kahlstrm/secret-injector/internal/testutil"
+	cfgpkg "github.com/kahlstrm/secret-injector/pkg/config"
 )
 
 func TestNew_DoesNotBuildProvidersEagerly(t *testing.T) {
@@ -104,6 +108,58 @@ func TestDefault_IncludesExtraProviders(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	assert.Equal(t, 0, provider.buildCount)
+}
+
+func TestDefaultWithOptions_DoesNotChangeEnvironmentForExtraProviders(t *testing.T) {
+	t.Setenv("AWS_REGION", "ambient-region")
+	t.Setenv("AWS_ENDPOINT_URL", "http://ambient.example")
+	t.Setenv("AWS_ENDPOINT_URL_SSM", "http://ambient-ssm.example")
+
+	assertAmbient := func() {
+		assert.Equal(t, "ambient-region", os.Getenv("AWS_REGION"))
+		assert.Equal(t, "http://ambient.example", os.Getenv("AWS_ENDPOINT_URL"))
+		assert.Equal(t, "http://ambient-ssm.example", os.Getenv("AWS_ENDPOINT_URL_SSM"))
+	}
+	provider := &fakeProvider{source: "custom"}
+	provider.buildFn = func(context.Context, WarningHandler) (Resolver, error) {
+		assertAmbient()
+		return &fakeResolver{resolveFn: func(context.Context, []string) (map[string]string, error) {
+			assertAmbient()
+			return map[string]string{"/value": "resolved"}, nil
+		}}, nil
+	}
+	reg := DefaultWithOptions(nil, DefaultOptions{AWS: AWSOptions{Profile: "injector", Region: "eu-west-1"}}, provider)
+
+	values, err := reg.ResolveAll(context.Background(), cfgpkg.Config{Secrets: cfgpkg.Secrets{
+		"VALUE": {Source: "custom", Ref: "/value"},
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"VALUE": "resolved"}, values)
+	assert.Equal(t, "ambient-region", os.Getenv("AWS_REGION"))
+	assert.Equal(t, "http://ambient.example", os.Getenv("AWS_ENDPOINT_URL"))
+	assert.Equal(t, "http://ambient-ssm.example", os.Getenv("AWS_ENDPOINT_URL_SSM"))
+}
+
+func TestDefaultWithOptions_ProfileWithoutRegionFailsClearly(t *testing.T) {
+	testutil.UseSharedConfig(t, `[profile injector]
+aws_access_key_id = profile-key
+aws_secret_access_key = profile-secret
+`)
+	t.Setenv("AWS_REGION", "ambient-region")
+	t.Setenv("AWS_ENDPOINT_URL", "http://127.0.0.1:1")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	reg := DefaultWithOptions(nil, DefaultOptions{AWS: AWSOptions{Profile: "injector"}})
+	_, err := reg.ResolveAll(ctx, cfgpkg.Config{Secrets: cfgpkg.Secrets{
+		"VALUE": {Source: "aws_ssm", Ref: "/value"},
+	}})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrAWSRegionRequired)
+	assert.Contains(t, err.Error(), "selected AWS profile has no region")
+	assert.Equal(t, "ambient-region", os.Getenv("AWS_REGION"))
 }
 
 func TestDefaultProviders_LoadAWSConfigLazily(t *testing.T) {

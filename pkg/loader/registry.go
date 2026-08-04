@@ -9,6 +9,20 @@ import (
 	awsssm "github.com/kahlstrm/secret-injector/internal/aws/ssm"
 )
 
+// AWSOptions configures AWS resolution for the built-in providers.
+type AWSOptions struct {
+	Profile string
+	Region  string
+}
+
+// ErrAWSRegionRequired indicates that configured AWS resolution has no region.
+var ErrAWSRegionRequired = awsconfig.ErrRegionRequired
+
+// DefaultOptions configures the built-in providers.
+type DefaultOptions struct {
+	AWS AWSOptions
+}
+
 // New creates a registry from the provided providers.
 // Later providers replace earlier providers with the same Source.
 func New(onWarning WarningHandler, providers ...Provider) *Registry {
@@ -29,7 +43,18 @@ func New(onWarning WarningHandler, providers ...Provider) *Registry {
 // Default creates a registry containing the built-in providers plus any extras.
 // Extras replace built-ins when they use the same source.
 func Default(onWarning WarningHandler, extra ...Provider) *Registry {
-	providers := defaultProviders(awsconfig.LoadDefault)
+	return DefaultWithOptions(onWarning, DefaultOptions{}, extra...)
+}
+
+// DefaultWithOptions creates a configured registry containing the built-in
+// providers plus any extras.
+func DefaultWithOptions(onWarning WarningHandler, options DefaultOptions, extra ...Provider) *Registry {
+	providers := defaultProviders(func(ctx context.Context) (aws.Config, error) {
+		return awsconfig.Load(ctx, awsconfig.Options{
+			Profile: options.AWS.Profile,
+			Region:  options.AWS.Region,
+		})
+	})
 	providers = append(providers, extra...)
 	return New(onWarning, providers...)
 }

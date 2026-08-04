@@ -20,13 +20,13 @@ type LocalStackContainer struct {
 	*localstack.LocalStackContainer
 }
 
-// SetupLocalStack starts a LocalStack container with SSM and Secrets Manager enabled.
+// SetupLocalStack starts a LocalStack container with the services used by integration tests.
 // Returns an error if Docker is unavailable.
 func SetupLocalStack(ctx context.Context) (*LocalStackContainer, error) {
 	// Pin the latest community image explicitly because `latest` now requires auth.
 	container, err := localstack.Run(ctx, localStackImage,
 		testcontainers.WithEnv(map[string]string{
-			"SERVICES":           "ssm,secretsmanager",
+			"SERVICES":           "ssm,secretsmanager,sts",
 			"DEBUG":              "0",
 			"LS_LOG":             "warn",
 			"AWS_DEFAULT_REGION": "us-east-1",
