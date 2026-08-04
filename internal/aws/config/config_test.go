@@ -122,6 +122,26 @@ func TestLoad_ProfileIgnoresAmbientRegionAndEndpoints(t *testing.T) {
 	}
 }
 
+// A missing profile must fail instead of falling back to the ambient credential
+// chain the selected profile is meant to replace. LoadDefaultConfig alone would
+// silently ignore SharedConfigProfileNotExistError.
+func TestLoad_MissingProfileIsRejected(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
+region = eu-west-1
+`), 0o600))
+	t.Setenv("AWS_CONFIG_FILE", configPath)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+	t.Setenv("AWS_ACCESS_KEY_ID", "ambient-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret")
+	t.Setenv("AWS_REGION", "ambient-region")
+
+	_, err := Load(context.Background(), Options{Profile: "typo"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "typo")
+}
+
 func TestLoad_ProfileWithoutRegionIsRejected(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config")
 	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
