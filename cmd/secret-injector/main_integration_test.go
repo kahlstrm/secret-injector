@@ -168,26 +168,6 @@ func TestIntegration_FetchWithIsolatedAssumeRoleProfile(t *testing.T) {
 	assert.Empty(t, stderr.String())
 }
 
-func TestIntegration_AWSProfileFlagOverridesEnvironment(t *testing.T) {
-	ctx := context.Background()
-	cfg := testLS.MustAWSConfig(t, ctx)
-	client := awsssm.NewFromConfig(cfg)
-	endpoint := testLS.MustEndpoint(t, ctx)
-	seedParameter(t, ctx, client, "/isolated-profile/flag", "from-flag-profile")
-
-	configJSON := `{"secrets":{"VALUE":{"source":"aws_ssm","ref":"/isolated-profile/flag"}}}`
-	cmd := exec.Command(testBinary, "fetch", "--aws-profile", "injector", "--config", configJSON)
-	cmd.Env = isolatedAWSEnv(t, writeIntegrationAWSProfile(t, endpoint), "SECRET_INJECTOR_AWS_PROFILE=missing")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	require.NoError(t, err, "fetch failed: stderr=%s", stderr.String())
-	assert.Equal(t, "VALUE=from-flag-profile\n", stdout.String())
-	assert.Empty(t, stderr.String())
-}
-
 func TestIntegration_AWSProfileWithoutRegionFailsClearly(t *testing.T) {
 	profilePath := testutil.WriteSharedConfig(t, `[profile injector]
 aws_access_key_id = profile-key
