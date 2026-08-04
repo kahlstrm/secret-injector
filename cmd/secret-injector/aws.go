@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
-
-	"github.com/kahlstrm/secret-injector/pkg/config"
-	"github.com/kahlstrm/secret-injector/pkg/loader"
 	"github.com/urfave/cli/v3"
+
+	"github.com/kahlstrm/secret-injector/pkg/loader"
 )
 
 const (
@@ -33,10 +31,4 @@ func awsOptions(c *cli.Command) loader.AWSOptions {
 		Profile: c.String("aws-profile"),
 		Region:  c.String("aws-region"),
 	}
-}
-
-func resolveSecrets(ctx context.Context, c *cli.Command, cfg config.Config) (map[string]string, error) {
-	options := awsOptions(c)
-	registry := loader.DefaultWithOptions(warnToStderr, loader.DefaultOptions{AWS: options})
-	return registry.ResolveAll(ctx, cfg)
 }

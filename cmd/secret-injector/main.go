@@ -88,7 +88,8 @@ func fetchCmd() *cli.Command {
 				return fmt.Errorf("unknown format %q: must be env, json, or export", format)
 			}
 
-			values, err := resolveSecrets(ctx, c, cfg)
+			registry := loader.DefaultWithOptions(warnToStderr, loader.DefaultOptions{AWS: awsOptions(c)})
+			values, err := registry.ResolveAll(ctx, cfg)
 			if err != nil {
 				return err
 			}
@@ -133,7 +134,8 @@ func execCmd() *cli.Command {
 				return err
 			}
 
-			secrets, err := resolveSecrets(ctx, c, cfg)
+			registry := loader.DefaultWithOptions(warnToStderr, loader.DefaultOptions{AWS: awsOptions(c)})
+			secrets, err := registry.ResolveAll(ctx, cfg)
 			if err != nil {
 				return err
 			}
