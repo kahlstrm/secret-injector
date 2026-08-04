@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -75,4 +76,82 @@ aws_secret_access_key = profile-secret
 	require.NoError(t, err)
 	assert.Equal(t, "profile-key", credentials.AccessKeyID)
 	assert.Equal(t, "eu-west-1", cfg.Region)
+}
+
+func TestLoad_ProfileIgnoresAmbientRegionAndEndpoints(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
+region = eu-west-1
+endpoint_url = http://profile.example
+aws_access_key_id = profile-key
+aws_secret_access_key = profile-secret
+`), 0o600))
+	t.Setenv("AWS_CONFIG_FILE", configPath)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+	t.Setenv("AWS_REGION", "ambient-region")
+	t.Setenv("AWS_ENDPOINT_URL", "http://ambient.example")
+	t.Setenv("AWS_ENDPOINT_URL_SSM", "http://ambient-ssm.example")
+
+	cfg, err := Load(context.Background(), Options{Profile: "injector"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "eu-west-1", cfg.Region)
+	assert.Equal(t, "http://profile.example", aws.ToString(cfg.BaseEndpoint))
+	endpoint, selected := ProfileEndpoint(cfg, "SSM")
+	assert.True(t, selected)
+	assert.Equal(t, "http://profile.example", aws.ToString(endpoint))
+}
+
+func TestLoad_ProfileIgnoresAmbientEndpointSettings(t *testing.T) {
+	tests := []struct {
+		name             string
+		profileSettings  string
+		ambientFIPS      string
+		ambientDualStack string
+		ambientRetryMode string
+		wantFIPS         aws.FIPSEndpointState
+		wantDualStack    aws.DualStackEndpointState
+		wantRetryMode    aws.RetryMode
+	}{
+		{
+			name:             "profile values win",
+			profileSettings:  "use_fips_endpoint = true\nuse_dualstack_endpoint = true\nretry_mode = adaptive\n",
+			ambientFIPS:      "false",
+			ambientDualStack: "false",
+			ambientRetryMode: "standard",
+			wantFIPS:         aws.FIPSEndpointStateEnabled,
+			wantDualStack:    aws.DualStackEndpointStateEnabled,
+			wantRetryMode:    aws.RetryModeAdaptive,
+		},
+		{
+			name:             "profile defaults win",
+			ambientFIPS:      "true",
+			ambientDualStack: "true",
+			ambientRetryMode: "adaptive",
+			wantFIPS:         aws.FIPSEndpointStateDisabled,
+			wantDualStack:    aws.DualStackEndpointStateDisabled,
+			wantRetryMode:    aws.RetryModeStandard,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config")
+			contents := "[profile injector]\nregion = eu-west-1\naws_access_key_id = profile-key\naws_secret_access_key = profile-secret\n" + test.profileSettings
+			require.NoError(t, os.WriteFile(configPath, []byte(contents), 0o600))
+			t.Setenv("AWS_CONFIG_FILE", configPath)
+			t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+			t.Setenv("AWS_USE_FIPS_ENDPOINT", test.ambientFIPS)
+			t.Setenv("AWS_USE_DUALSTACK_ENDPOINT", test.ambientDualStack)
+			t.Setenv("AWS_RETRY_MODE", test.ambientRetryMode)
+
+			cfg, err := Load(context.Background(), Options{Profile: "injector"})
+			require.NoError(t, err)
+			clientOptions := awsssm.NewFromConfig(cfg).Options()
+
+			assert.Equal(t, test.wantFIPS, clientOptions.EndpointOptions.UseFIPSEndpoint)
+			assert.Equal(t, test.wantDualStack, clientOptions.EndpointOptions.UseDualStackEndpoint)
+			assert.Equal(t, test.wantRetryMode, cfg.RetryMode)
+		})
+	}
 }

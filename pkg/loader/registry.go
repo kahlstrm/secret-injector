@@ -2,6 +2,8 @@ package loader
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/kahlstrm/secret-injector/internal/aws/config"
@@ -14,6 +16,9 @@ type AWSOptions struct {
 	Profile string
 	Region  string
 }
+
+// ErrAWSRegionRequired indicates that configured AWS resolution has no region.
+var ErrAWSRegionRequired = errors.New("AWS region is required")
 
 // DefaultOptions configures the built-in providers.
 type DefaultOptions struct {
@@ -49,10 +54,17 @@ func DefaultWithOptions(onWarning WarningHandler, options DefaultOptions, extra 
 	loadAWSConfig := awsconfig.LoadDefault
 	if options.AWS != (AWSOptions{}) {
 		loadAWSConfig = func(ctx context.Context) (aws.Config, error) {
-			return awsconfig.Load(ctx, awsconfig.Options{
+			cfg, err := awsconfig.Load(ctx, awsconfig.Options{
 				Profile: options.AWS.Profile,
 				Region:  options.AWS.Region,
 			})
+			if err != nil {
+				return aws.Config{}, err
+			}
+			if cfg.Region == "" {
+				return aws.Config{}, fmt.Errorf("%w: selected AWS profile has no region; set an explicit region", ErrAWSRegionRequired)
+			}
+			return cfg, nil
 		}
 	}
 

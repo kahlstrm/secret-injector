@@ -127,7 +127,7 @@ SECRET_INJECTOR_AWS_PROFILE=production \
 secret-injector exec -- ./myapp
 ```
 
-Selecting a profile this way gives its credentials precedence and isolates secret resolution from ordinary AWS region and configured endpoint environment variables. Region and endpoints defined by the selected profile remain available to the injector. The child process still receives its original environment unchanged.
+Selecting a profile this way uses its credential chain and isolates secret resolution from ordinary AWS region and configured endpoint environment variables. Ambient static credentials are used only when the profile explicitly selects `Environment` as its credential source; a profile without a credential source can still fall back to container or instance-role credentials. Region and endpoints defined by the selected profile remain available to the injector; the profile must define a region unless `--aws-region` is set. The child process still receives its original environment unchanged.
 
 | Flag | Environment variable | Description |
 | --- | --- | --- |
@@ -223,6 +223,7 @@ secrets, err := registry.ResolveAll(ctx, cfg)
 ```
 
 Custom providers can be added to `loader.New` or supplied as extras to `loader.Default`.
+Use `loader.DefaultWithOptions` to select an AWS profile or region; it applies the same AWS isolation and validation behavior as the CLI flags.
 
 ## Development
 

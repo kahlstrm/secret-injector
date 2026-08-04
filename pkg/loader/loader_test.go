@@ -14,11 +14,15 @@ type fakeResolver struct {
 	result       map[string]string
 	err          error
 	resolvedArgs [][]string
+	resolveFn    func(context.Context, []string) (map[string]string, error)
 }
 
-func (f *fakeResolver) Resolve(_ context.Context, refs []string) (map[string]string, error) {
+func (f *fakeResolver) Resolve(ctx context.Context, refs []string) (map[string]string, error) {
 	cp := append([]string(nil), refs...)
 	f.resolvedArgs = append(f.resolvedArgs, cp)
+	if f.resolveFn != nil {
+		return f.resolveFn(ctx, refs)
+	}
 	if f.err != nil {
 		return nil, f.err
 	}

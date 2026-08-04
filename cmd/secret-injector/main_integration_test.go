@@ -80,21 +80,50 @@ aws_secret_access_key = profile-secret
 	return path
 }
 
+func writeIntegrationAssumeRoleAWSProfile(t *testing.T, endpoint string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "config")
+	contents := fmt.Sprintf(`[profile source]
+aws_access_key_id = source-key
+aws_secret_access_key = source-secret
+
+[profile injector]
+region = us-east-1
+endpoint_url = %s
+role_arn = arn:aws:iam::000000000000:role/secret-injector-test
+source_profile = source
+`, endpoint)
+	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+	return path
+}
+
 func TestIntegration_ExecWithIsolatedAWSProfile(t *testing.T) {
 	ctx := context.Background()
 	cfg := testLS.MustAWSConfig(t, ctx)
-	client := awsssm.NewFromConfig(cfg)
+	ssmClient := awsssm.NewFromConfig(cfg)
+	secretsManagerClient := awssecretsmanager.NewFromConfig(cfg)
 	endpoint := testLS.MustEndpoint(t, ctx)
-	seedParameter(t, ctx, client, "/isolated-profile/value", "resolved")
+	seedParameter(t, ctx, ssmClient, "/isolated-profile/value", "resolved")
+	_, err := secretsManagerClient.CreateSecret(ctx, &awssecretsmanager.CreateSecretInput{
+		Name:         aws.String("isolated-profile-secret"),
+		SecretString: aws.String("secret-resolved"),
+	})
+	require.NoError(t, err)
 
-	configJSON := `{"secrets":{"VALUE":{"source":"aws_ssm","ref":"/isolated-profile/value"}}}`
+	configJSON := `{"secrets":{"VALUE":{"source":"aws_ssm","ref":"/isolated-profile/value"},"SECRET_VALUE":{"source":"aws_secretsmanager","ref":"isolated-profile-secret"}}}`
 	ambientEndpoint := "http://127.0.0.1:1"
-	cmd := exec.Command(testBinary, "exec", "--config", configJSON, "--", "sh", "-c", `printf '%s|%s|%s|%s\n' "$VALUE" "$AWS_ENDPOINT_URL" "$AWS_ACCESS_KEY_ID" "$AWS_REGION"`)
+	cmd := exec.Command(testBinary, "exec", "--config", configJSON, "--", "sh", "-c", `printf '%s|%s|%s|%s|%s\n' "$VALUE" "$SECRET_VALUE" "$AWS_ENDPOINT_URL" "$AWS_ACCESS_KEY_ID" "$AWS_REGION"`)
 	cmd.Env = []string{
 		"AWS_ACCESS_KEY_ID=ambient-key",
 		"AWS_SECRET_ACCESS_KEY=ambient-secret",
 		"AWS_REGION=eu-north-1",
 		"AWS_ENDPOINT_URL=" + ambientEndpoint,
+		"AWS_ENDPOINT_URL_SSM=" + ambientEndpoint,
+		"AWS_ENDPOINT_URL_SECRETS_MANAGER=" + ambientEndpoint,
+		"AWS_USE_FIPS_ENDPOINT=true",
+		"AWS_USE_DUALSTACK_ENDPOINT=true",
+		"AWS_RETRY_MODE=adaptive",
 		"AWS_CONFIG_FILE=" + writeIntegrationAWSProfile(t, endpoint),
 		"AWS_SHARED_CREDENTIALS_FILE=" + filepath.Join(t.TempDir(), "credentials"),
 		"SECRET_INJECTOR_AWS_PROFILE=injector",
@@ -104,9 +133,40 @@ func TestIntegration_ExecWithIsolatedAWSProfile(t *testing.T) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	require.NoError(t, err, "exec failed: stderr=%s", stderr.String())
-	assert.Equal(t, "resolved|"+ambientEndpoint+"|ambient-key|eu-north-1\n", stdout.String())
+	assert.Equal(t, "resolved|secret-resolved|"+ambientEndpoint+"|ambient-key|eu-north-1\n", stdout.String())
+	assert.Empty(t, stderr.String())
+}
+
+func TestIntegration_FetchWithIsolatedAssumeRoleProfile(t *testing.T) {
+	ctx := context.Background()
+	cfg := testLS.MustAWSConfig(t, ctx)
+	endpoint := testLS.MustEndpoint(t, ctx)
+	seedParameter(t, ctx, awsssm.NewFromConfig(cfg), "/isolated-assume-role/value", "assumed")
+
+	configJSON := `{"secrets":{"VALUE":{"source":"aws_ssm","ref":"/isolated-assume-role/value"}}}`
+	ambientEndpoint := "http://127.0.0.1:1"
+	cmd := exec.Command(testBinary, "fetch", "--config", configJSON)
+	cmd.Env = []string{
+		"AWS_ACCESS_KEY_ID=ambient-key",
+		"AWS_SECRET_ACCESS_KEY=ambient-secret",
+		"AWS_REGION=eu-north-1",
+		"AWS_ENDPOINT_URL=" + ambientEndpoint,
+		"AWS_ENDPOINT_URL_SSM=" + ambientEndpoint,
+		"AWS_ENDPOINT_URL_STS=" + ambientEndpoint,
+		"AWS_CONFIG_FILE=" + writeIntegrationAssumeRoleAWSProfile(t, endpoint),
+		"AWS_SHARED_CREDENTIALS_FILE=" + filepath.Join(t.TempDir(), "credentials"),
+		"SECRET_INJECTOR_AWS_PROFILE=injector",
+		"PATH=/usr/bin:/bin",
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	require.NoError(t, err, "fetch failed: stderr=%s", stderr.String())
+	assert.Equal(t, "VALUE=assumed\n", stdout.String())
 	assert.Empty(t, stderr.String())
 }
 
@@ -137,6 +197,31 @@ func TestIntegration_AWSProfileFlagOverridesEnvironment(t *testing.T) {
 	require.NoError(t, err, "fetch failed: stderr=%s", stderr.String())
 	assert.Equal(t, "VALUE=from-flag-profile\n", stdout.String())
 	assert.Empty(t, stderr.String())
+}
+
+func TestIntegration_AWSProfileWithoutRegionFailsClearly(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "config")
+	require.NoError(t, os.WriteFile(profilePath, []byte(`[profile injector]
+aws_access_key_id = profile-key
+aws_secret_access_key = profile-secret
+`), 0o600))
+
+	configJSON := `{"secrets":{"VALUE":{"source":"aws_ssm","ref":"/value"}}}`
+	cmd := exec.Command(testBinary, "fetch", "--aws-profile", "injector", "--config", configJSON)
+	cmd.Env = []string{
+		"AWS_REGION=eu-north-1",
+		"AWS_ENDPOINT_URL=http://127.0.0.1:1",
+		"AWS_CONFIG_FILE=" + profilePath,
+		"AWS_SHARED_CREDENTIALS_FILE=" + filepath.Join(t.TempDir(), "credentials"),
+		"PATH=/usr/bin:/bin",
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	require.Error(t, err)
+	assert.Contains(t, stderr.String(), "AWS region is required: selected AWS profile has no region")
 }
 
 func TestIntegration_ExecWithSSM(t *testing.T) {

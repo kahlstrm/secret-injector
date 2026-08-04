@@ -227,34 +227,6 @@ func TestAWSOptions(t *testing.T) {
 	}
 }
 
-func TestScopeAWSConfig_IsolatesAndRestoresConnectionEnvironment(t *testing.T) {
-	t.Setenv("AWS_ACCESS_KEY_ID", "ambient-key")
-	t.Setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret")
-	t.Setenv("AWS_PROFILE", "ambient-profile")
-	t.Setenv("AWS_REGION", "ambient-region")
-	t.Setenv("AWS_ENDPOINT_URL", "http://ambient.example")
-	t.Setenv("AWS_ENDPOINT_URL_SSM", "http://ambient-ssm.example")
-	t.Setenv("AWS_CONFIG_FILE", "/tmp/shared-config")
-
-	restore, err := scopeAWSConfig(loader.AWSOptions{Profile: "injector", Region: "eu-west-1"})
-	require.NoError(t, err)
-	assert.Equal(t, "ambient-profile", os.Getenv("AWS_PROFILE"))
-	assert.Empty(t, os.Getenv("AWS_REGION"))
-	assert.Equal(t, "ambient-key", os.Getenv("AWS_ACCESS_KEY_ID"))
-	assert.Equal(t, "ambient-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"))
-	assert.Empty(t, os.Getenv("AWS_ENDPOINT_URL"))
-	assert.Empty(t, os.Getenv("AWS_ENDPOINT_URL_SSM"))
-	assert.Equal(t, "/tmp/shared-config", os.Getenv("AWS_CONFIG_FILE"))
-
-	require.NoError(t, restore())
-	assert.Equal(t, "ambient-key", os.Getenv("AWS_ACCESS_KEY_ID"))
-	assert.Equal(t, "ambient-secret", os.Getenv("AWS_SECRET_ACCESS_KEY"))
-	assert.Equal(t, "ambient-profile", os.Getenv("AWS_PROFILE"))
-	assert.Equal(t, "ambient-region", os.Getenv("AWS_REGION"))
-	assert.Equal(t, "http://ambient.example", os.Getenv("AWS_ENDPOINT_URL"))
-	assert.Equal(t, "http://ambient-ssm.example", os.Getenv("AWS_ENDPOINT_URL_SSM"))
-}
-
 func TestValidateCmd_WithVarSubstitution(t *testing.T) {
 	cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
 
