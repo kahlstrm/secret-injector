@@ -123,8 +123,8 @@ func TestLoad_ProfileIgnoresAmbientRegionAndEndpoints(t *testing.T) {
 }
 
 // A missing profile must fail instead of falling back to the ambient credential
-// chain the selected profile is meant to replace. LoadDefaultConfig alone would
-// silently ignore SharedConfigProfileNotExistError.
+// chain the selected profile is meant to replace. The SDK enforces this only
+// while a profile is explicitly selected, so pin the behaviour we rely on.
 func TestLoad_MissingProfileIsRejected(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config")
 	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
