@@ -49,6 +49,32 @@ jobs:
             --id secret-injector \
             --output "$PWD/bin/secret-injector"
 
+      # The release binary is a distribution artifact, commonly copied into
+      # application images. The budget makes a dependency that no longer fits
+      # a deliberate decision rather than a surprise found after release.
+      - name: Enforce release binary budget
+        env:
+          BUDGET_BYTES: "20971520"
+        run: |
+          size=$(stat -c %s bin/secret-injector)
+          size_display=$(awk -v bytes="$size" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
+          budget_display=$(awk -v bytes="$BUDGET_BYTES" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
+          used_display=$(awk -v bytes="$size" -v budget="$BUDGET_BYTES" 'BEGIN { printf "%.0f%%", bytes * 100 / budget }')
+
+          {
+            echo '### Release binary budget'
+            echo
+            echo '| Size | Budget | Used |'
+            echo '| ---: | ---: | ---: |'
+            echo "| $size_display | $budget_display | $used_display |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$size" -gt "$BUDGET_BYTES" ]; then
+            echo "::error title=Release binary budget exceeded::$size_display exceeds the $budget_display budget"
+            exit 1
+          fi
+          echo "::notice title=Release binary budget::$size_display of $budget_display ($used_display)"
+
       - name: Compare release binary size
         if: ${{ github.event_name == 'pull_request' }}
         env:
