@@ -49,17 +49,12 @@ func Default(onWarning WarningHandler, extra ...Provider) *Registry {
 // DefaultWithOptions creates a configured registry containing the built-in
 // providers plus any extras.
 func DefaultWithOptions(onWarning WarningHandler, options DefaultOptions, extra ...Provider) *Registry {
-	loadAWSConfig := awsconfig.LoadDefault
-	if options.AWS != (AWSOptions{}) {
-		loadAWSConfig = func(ctx context.Context) (aws.Config, error) {
-			return awsconfig.Load(ctx, awsconfig.Options{
-				Profile: options.AWS.Profile,
-				Region:  options.AWS.Region,
-			})
-		}
-	}
-
-	providers := defaultProviders(loadAWSConfig)
+	providers := defaultProviders(func(ctx context.Context) (aws.Config, error) {
+		return awsconfig.Load(ctx, awsconfig.Options{
+			Profile: options.AWS.Profile,
+			Region:  options.AWS.Region,
+		})
+	})
 	providers = append(providers, extra...)
 	return New(onWarning, providers...)
 }

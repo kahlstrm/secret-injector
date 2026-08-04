@@ -2,8 +2,8 @@ package config
 
 import (
 	"context"
+	"slices"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	awscfg "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/ssocreds"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -11,31 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssooidc"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
-
-type profileSettings struct {
-	profile        awscfg.SharedConfig
-	explicitRegion string
-}
-
-func (s profileSettings) endpoint(service string) *string {
-	if s.profile.IgnoreConfiguredEndpoints != nil && *s.profile.IgnoreConfiguredEndpoints {
-		return nil
-	}
-	if endpoint, found, _ := s.profile.GetServiceBaseEndpoint(context.Background(), service); found {
-		return aws.String(endpoint)
-	}
-	if s.profile.BaseEndpoint != "" {
-		return aws.String(s.profile.BaseEndpoint)
-	}
-	return nil
-}
-
-func (s profileSettings) region() string {
-	if s.explicitRegion != "" {
-		return s.explicitRegion
-	}
-	return s.profile.Region
-}
 
 func credentialEndpointLoadOptions(settings profileSettings) []func(*awscfg.LoadOptions) error {
 	return []func(*awscfg.LoadOptions) error{
@@ -55,7 +30,7 @@ func credentialEndpointLoadOptions(settings profileSettings) []func(*awscfg.Load
 			}
 		}),
 		awscfg.WithSSOTokenProviderOptions(func(options *ssocreds.SSOTokenProviderOptions) {
-			options.ClientOptions = appendFinalOption(options.ClientOptions, ssoOIDCEndpointOption(settings, ssooidc.ServiceID))
+			options.ClientOptions = appendFinalOption(options.ClientOptions, ssoOIDCEndpointOption(settings))
 		}),
 	}
 }
@@ -66,7 +41,7 @@ type assumeRoleClient struct {
 }
 
 func (c *assumeRoleClient) AssumeRole(ctx context.Context, input *sts.AssumeRoleInput, options ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {
-	return c.next.AssumeRole(ctx, input, appendFinalOption(options, stsEndpointOption(c.settings, sts.ServiceID))...)
+	return c.next.AssumeRole(ctx, input, appendFinalOption(options, stsEndpointOption(c.settings))...)
 }
 
 type webIdentityClient struct {
@@ -75,7 +50,7 @@ type webIdentityClient struct {
 }
 
 func (c *webIdentityClient) AssumeRoleWithWebIdentity(ctx context.Context, input *sts.AssumeRoleWithWebIdentityInput, options ...func(*sts.Options)) (*sts.AssumeRoleWithWebIdentityOutput, error) {
-	return c.next.AssumeRoleWithWebIdentity(ctx, input, appendFinalOption(options, stsEndpointOption(c.settings, sts.ServiceID))...)
+	return c.next.AssumeRoleWithWebIdentity(ctx, input, appendFinalOption(options, stsEndpointOption(c.settings))...)
 }
 
 type ssoClient struct {
@@ -84,32 +59,30 @@ type ssoClient struct {
 }
 
 func (c *ssoClient) GetRoleCredentials(ctx context.Context, input *sso.GetRoleCredentialsInput, options ...func(*sso.Options)) (*sso.GetRoleCredentialsOutput, error) {
-	return c.next.GetRoleCredentials(ctx, input, appendFinalOption(options, ssoEndpointOption(c.settings, sso.ServiceID))...)
+	return c.next.GetRoleCredentials(ctx, input, appendFinalOption(options, ssoEndpointOption(c.settings))...)
 }
 
-func stsEndpointOption(settings profileSettings, service string) func(*sts.Options) {
+func stsEndpointOption(settings profileSettings) func(*sts.Options) {
 	return func(options *sts.Options) {
-		options.BaseEndpoint = settings.endpoint(service)
-		if region := settings.region(); region != "" {
-			options.Region = region
-		}
+		options.BaseEndpoint = settings.endpoint(sts.ServiceID)
+		options.Region = settings.region
 	}
 }
 
-func ssoEndpointOption(settings profileSettings, service string) func(*sso.Options) {
+func ssoEndpointOption(settings profileSettings) func(*sso.Options) {
 	return func(options *sso.Options) {
-		options.BaseEndpoint = settings.endpoint(service)
+		options.BaseEndpoint = settings.endpoint(sso.ServiceID)
 	}
 }
 
-func ssoOIDCEndpointOption(settings profileSettings, service string) func(*ssooidc.Options) {
+func ssoOIDCEndpointOption(settings profileSettings) func(*ssooidc.Options) {
 	return func(options *ssooidc.Options) {
-		options.BaseEndpoint = settings.endpoint(service)
+		options.BaseEndpoint = settings.endpoint(ssooidc.ServiceID)
 	}
 }
 
+// appendFinalOption copies before appending so the caller's slice is not
+// mutated through a shared backing array.
 func appendFinalOption[T any](options []func(*T), final func(*T)) []func(*T) {
-	result := make([]func(*T), 0, len(options)+1)
-	result = append(result, options...)
-	return append(result, final)
+	return append(slices.Clone(options), final)
 }

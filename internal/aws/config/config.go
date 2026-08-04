@@ -1,6 +1,7 @@
 package config
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -62,30 +63,65 @@ func LoadDefault(ctx context.Context) (aws.Config, error) {
 
 // Load resolves AWS configuration with explicit profile and region overrides.
 func Load(ctx context.Context, options Options) (aws.Config, error) {
-	var loadOptions []func(*awscfg.LoadOptions) error
-	var settings profileSettings
-	if options.Profile != "" {
-		profile, err := loadSharedProfile(ctx, options.Profile)
-		if err != nil {
-			return aws.Config{}, err
+	if options.Profile == "" {
+		if options.Region == "" {
+			return awscfg.LoadDefaultConfig(ctx)
 		}
-		settings = profileSettings{profile: profile, explicitRegion: options.Region}
-		loadOptions = append(loadOptions, awscfg.WithSharedConfigProfile(options.Profile))
-		loadOptions = append(loadOptions, profileIsolationLoadOptions(profile)...)
-		loadOptions = append(loadOptions, credentialEndpointLoadOptions(settings)...)
+		return awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(options.Region))
 	}
-	if options.Region != "" {
-		loadOptions = append(loadOptions, awscfg.WithRegion(options.Region))
+
+	profile, err := loadSharedProfile(ctx, options.Profile)
+	if err != nil {
+		return aws.Config{}, err
 	}
-	cfg, err := awscfg.LoadDefaultConfig(ctx, loadOptions...)
-	if err != nil || options.Profile == "" {
-		return cfg, err
-	}
-	cfg = normalizeProfileConfig(cfg, settings)
-	if cfg.Region == "" {
+	region := cmp.Or(options.Region, profile.Region)
+	if region == "" {
 		return aws.Config{}, fmt.Errorf("%w: selected AWS profile has no region; set an explicit region", ErrRegionRequired)
 	}
-	return cfg, nil
+
+	settings := profileSettings{profile: profile, region: region}
+	loadOptions := []func(*awscfg.LoadOptions) error{
+		awscfg.WithSharedConfigProfile(options.Profile),
+		awscfg.WithRegion(region),
+	}
+	loadOptions = append(loadOptions, profileIsolationLoadOptions(profile)...)
+	loadOptions = append(loadOptions, credentialEndpointLoadOptions(settings)...)
+
+	cfg, err := awscfg.LoadDefaultConfig(ctx, loadOptions...)
+	if err != nil {
+		return aws.Config{}, err
+	}
+	return normalizeProfileConfig(cfg, settings), nil
+}
+
+// profileSettings is the selected profile plus the region that wins for it.
+type profileSettings struct {
+	profile awscfg.SharedConfig
+	region  string
+}
+
+func (s profileSettings) ignoresConfiguredEndpoints() bool {
+	return s.profile.IgnoreConfiguredEndpoints != nil && *s.profile.IgnoreConfiguredEndpoints
+}
+
+// baseEndpoint returns the profile's global endpoint, if it defines one.
+func (s profileSettings) baseEndpoint() *string {
+	if s.ignoresConfiguredEndpoints() || s.profile.BaseEndpoint == "" {
+		return nil
+	}
+	return aws.String(s.profile.BaseEndpoint)
+}
+
+// endpoint returns the profile's endpoint for service, preferring a
+// service-specific entry over the profile's global endpoint.
+func (s profileSettings) endpoint(service string) *string {
+	if s.ignoresConfiguredEndpoints() {
+		return nil
+	}
+	if endpoint, found, _ := s.profile.GetServiceBaseEndpoint(context.Background(), service); found {
+		return aws.String(endpoint)
+	}
+	return s.baseEndpoint()
 }
 
 func loadSharedProfile(ctx context.Context, name string) (awscfg.SharedConfig, error) {
@@ -99,36 +135,20 @@ func loadSharedProfile(ctx context.Context, name string) (awscfg.SharedConfig, e
 	})
 }
 
+// profileIsolationLoadOptions pins the settings the SDK resolves eagerly into
+// aws.Config, which withoutEnvConfig cannot undo afterwards. Unset profile
+// values fall back to SDK defaults rather than to the ambient environment.
 func profileIsolationLoadOptions(profile awscfg.SharedConfig) []func(*awscfg.LoadOptions) error {
-	fips := profile.UseFIPSEndpoint
-	if fips == aws.FIPSEndpointStateUnset {
-		fips = aws.FIPSEndpointStateDisabled
-	}
-	dualStack := profile.UseDualStackEndpoint
-	if dualStack == aws.DualStackEndpointStateUnset {
-		dualStack = aws.DualStackEndpointStateDisabled
-	}
-	retryMode := profile.RetryMode
-	if retryMode == "" {
-		retryMode = aws.RetryModeStandard
-	}
 	return []func(*awscfg.LoadOptions) error{
-		awscfg.WithUseFIPSEndpoint(fips),
-		awscfg.WithUseDualStackEndpoint(dualStack),
-		awscfg.WithRetryMode(retryMode),
+		awscfg.WithUseFIPSEndpoint(cmp.Or(profile.UseFIPSEndpoint, aws.FIPSEndpointStateDisabled)),
+		awscfg.WithUseDualStackEndpoint(cmp.Or(profile.UseDualStackEndpoint, aws.DualStackEndpointStateDisabled)),
+		awscfg.WithRetryMode(cmp.Or(profile.RetryMode, aws.RetryModeStandard)),
 	}
 }
 
 func normalizeProfileConfig(cfg aws.Config, settings profileSettings) aws.Config {
-	if settings.explicitRegion == "" {
-		cfg.Region = settings.profile.Region
-	}
-	cfg.BaseEndpoint = nil
-	if settings.profile.IgnoreConfiguredEndpoints == nil || !*settings.profile.IgnoreConfiguredEndpoints {
-		if settings.profile.BaseEndpoint != "" {
-			cfg.BaseEndpoint = aws.String(settings.profile.BaseEndpoint)
-		}
-	}
+	cfg.Region = settings.region
+	cfg.BaseEndpoint = settings.baseEndpoint()
 	cfg.ConfigSources = withoutEnvConfig(cfg.ConfigSources)
 	return cfg
 }

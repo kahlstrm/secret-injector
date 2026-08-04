@@ -17,8 +17,8 @@ import (
 func TestCredentialClientsApplyFinalEndpoint(t *testing.T) {
 	want := "http://profile.example"
 	settings := profileSettings{
-		profile:        awscfg.SharedConfig{BaseEndpoint: want},
-		explicitRegion: "eu-west-1",
+		profile: awscfg.SharedConfig{BaseEndpoint: want},
+		region:  "eu-west-1",
 	}
 
 	t.Run("assume role", func(t *testing.T) {
@@ -53,7 +53,7 @@ func TestCredentialClientsApplyFinalEndpoint(t *testing.T) {
 		var options ssooidc.Options
 		options.BaseEndpoint = aws.String("http://ambient.example")
 
-		ssoOIDCEndpointOption(settings, ssooidc.ServiceID)(&options)
+		ssoOIDCEndpointOption(settings)(&options)
 
 		assert.Equal(t, want, aws.ToString(options.BaseEndpoint))
 	})
