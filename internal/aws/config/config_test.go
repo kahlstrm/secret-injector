@@ -3,14 +3,14 @@ package config
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsssm "github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kahlstrm/secret-injector/internal/testutil"
 )
 
 func TestLoader_Load_IsLazy(t *testing.T) {
@@ -59,13 +59,10 @@ func TestLoader_Load_DoesNotCacheErrors(t *testing.T) {
 }
 
 func TestLoad_ExplicitProfileAndRegionOverrideEnvironment(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config")
-	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
+	testutil.UseSharedConfig(t, `[profile injector]
 aws_access_key_id = profile-key
 aws_secret_access_key = profile-secret
-`), 0o600))
-	t.Setenv("AWS_CONFIG_FILE", configPath)
-	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+`)
 	t.Setenv("AWS_ACCESS_KEY_ID", "ambient-key")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret")
 	t.Setenv("AWS_REGION", "ambient-region")
@@ -101,13 +98,9 @@ func TestLoad_ProfileIgnoresAmbientRegionAndEndpoints(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config")
-			contents := "[profile injector]\nregion = eu-west-1\naws_access_key_id = profile-key\naws_secret_access_key = profile-secret\n" +
-				test.profileEndpoint +
-				"\n[services injector-services]\nssm =\n  endpoint_url = http://profile-ssm.example\n"
-			require.NoError(t, os.WriteFile(configPath, []byte(contents), 0o600))
-			t.Setenv("AWS_CONFIG_FILE", configPath)
-			t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+			testutil.UseSharedConfig(t, "[profile injector]\nregion = eu-west-1\naws_access_key_id = profile-key\naws_secret_access_key = profile-secret\n"+
+				test.profileEndpoint+
+				"\n[services injector-services]\nssm =\n  endpoint_url = http://profile-ssm.example\n")
 			t.Setenv("AWS_REGION", "ambient-region")
 			t.Setenv("AWS_ENDPOINT_URL", "http://ambient.example")
 			t.Setenv("AWS_ENDPOINT_URL_SSM", "http://ambient-ssm.example")
@@ -126,12 +119,9 @@ func TestLoad_ProfileIgnoresAmbientRegionAndEndpoints(t *testing.T) {
 // chain the selected profile is meant to replace. The SDK enforces this only
 // while a profile is explicitly selected, so pin the behaviour we rely on.
 func TestLoad_MissingProfileIsRejected(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config")
-	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
+	testutil.UseSharedConfig(t, `[profile injector]
 region = eu-west-1
-`), 0o600))
-	t.Setenv("AWS_CONFIG_FILE", configPath)
-	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+`)
 	t.Setenv("AWS_ACCESS_KEY_ID", "ambient-key")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret")
 	t.Setenv("AWS_REGION", "ambient-region")
@@ -143,13 +133,10 @@ region = eu-west-1
 }
 
 func TestLoad_ProfileWithoutRegionIsRejected(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config")
-	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
+	testutil.UseSharedConfig(t, `[profile injector]
 aws_access_key_id = profile-key
 aws_secret_access_key = profile-secret
-`), 0o600))
-	t.Setenv("AWS_CONFIG_FILE", configPath)
-	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+`)
 	t.Setenv("AWS_REGION", "ambient-region")
 
 	_, err := Load(context.Background(), Options{Profile: "injector"})
@@ -193,11 +180,7 @@ func TestLoad_ProfileIgnoresAmbientEndpointSettings(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "config")
-			contents := "[profile injector]\nregion = eu-west-1\naws_access_key_id = profile-key\naws_secret_access_key = profile-secret\n" + test.profileSettings
-			require.NoError(t, os.WriteFile(configPath, []byte(contents), 0o600))
-			t.Setenv("AWS_CONFIG_FILE", configPath)
-			t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+			testutil.UseSharedConfig(t, "[profile injector]\nregion = eu-west-1\naws_access_key_id = profile-key\naws_secret_access_key = profile-secret\n"+test.profileSettings)
 			t.Setenv("AWS_USE_FIPS_ENDPOINT", test.ambientFIPS)
 			t.Setenv("AWS_USE_DUALSTACK_ENDPOINT", test.ambientDualStack)
 			t.Setenv("AWS_RETRY_MODE", test.ambientRetryMode)

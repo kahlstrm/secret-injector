@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	cfgpkg "github.com/kahlstrm/secret-injector/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kahlstrm/secret-injector/internal/testutil"
+	cfgpkg "github.com/kahlstrm/secret-injector/pkg/config"
 )
 
 func TestNew_DoesNotBuildProvidersEagerly(t *testing.T) {
@@ -141,13 +142,10 @@ func TestDefaultWithOptions_DoesNotChangeEnvironmentForExtraProviders(t *testing
 }
 
 func TestDefaultWithOptions_ProfileWithoutRegionFailsClearly(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config")
-	require.NoError(t, os.WriteFile(configPath, []byte(`[profile injector]
+	testutil.UseSharedConfig(t, `[profile injector]
 aws_access_key_id = profile-key
 aws_secret_access_key = profile-secret
-`), 0o600))
-	t.Setenv("AWS_CONFIG_FILE", configPath)
-	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "credentials"))
+`)
 	t.Setenv("AWS_REGION", "ambient-region")
 	t.Setenv("AWS_ENDPOINT_URL", "http://127.0.0.1:1")
 
