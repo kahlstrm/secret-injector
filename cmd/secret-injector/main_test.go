@@ -299,7 +299,8 @@ func TestValidateCmd_UnknownSourceFails(t *testing.T) {
 	})
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported source")
+	assert.ErrorIs(t, err, loader.ErrUnknownSource)
+	assert.Contains(t, err.Error(), "supported sources are")
 }
 
 func TestFetchCmd_AllowsUnusedVar(t *testing.T) {

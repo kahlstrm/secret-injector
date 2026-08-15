@@ -418,3 +418,33 @@ func TestIntegration_ExecWithTemplateRefs(t *testing.T) {
 	assert.Equal(t, "exec-secret\n", stdout.String())
 	assert.Empty(t, stderr.String())
 }
+
+// Validation now runs through the registry, so the CLI must accept every
+// registered backend and reject anything else with the registry's own list.
+// Resolution never happens, so no backend credentials are involved.
+func TestIntegration_ValidateAcceptsEveryRegisteredBackend(t *testing.T) {
+	configJSON := `{"secrets":{` +
+		`"FROM_SSM":{"source":"aws_ssm","ref":"/validate/ssm"},` +
+		`"FROM_ASM":{"source":"aws_secretsmanager","ref":"validate/asm"},` +
+		`"FROM_GSM":{"source":"gcp_secretmanager","ref":"validate-gsm"}}}`
+
+	cmd := exec.Command(testBinary, "validate", "--config", configJSON)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	require.NoError(t, cmd.Run(), "validate failed: stderr=%s", stderr.String())
+}
+
+func TestIntegration_ValidateRejectsUnknownBackend(t *testing.T) {
+	configJSON := `{"secrets":{"NOPE":{"source":"vault","ref":"secret/data/app"}}}`
+
+	cmd := exec.Command(testBinary, "validate", "--config", configJSON)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	require.Error(t, cmd.Run(), "validate should reject an unregistered source")
+	// "unknown source" is the registry's wording; pkg/config's own fallback says
+	// "unsupported source", so this fails if validation stops consulting the registry.
+	assert.Contains(t, stderr.String(), `unknown source "vault"`)
+	assert.Contains(t, stderr.String(), "gcp_secretmanager", "the message should list what is registered")
+}

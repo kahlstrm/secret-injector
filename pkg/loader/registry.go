@@ -2,6 +2,9 @@ package loader
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/kahlstrm/secret-injector/internal/aws/config"
@@ -117,6 +120,41 @@ func defaultProviders(loadAWSConfig func(context.Context) (aws.Config, error), g
 			},
 		},
 	}
+}
+
+// ValidateSource reports whether the registry can resolve the given source.
+//
+// Commands pass this to config.Load so parsing rejects exactly the sources the
+// registry cannot serve. Without it, config keeps a second list of backends that
+// has to be updated in step, and a backend present in only one of them is either
+// rejected before resolution or accepted and then unresolvable.
+func (r *Registry) ValidateSource(source string) error {
+	if r.hasSource(source) {
+		return nil
+	}
+	available := r.Sources()
+	if len(available) == 0 {
+		return fmt.Errorf("%w: %s", ErrUnknownSource, source)
+	}
+	quoted := "'" + strings.Join(available, "', '") + "'"
+	return fmt.Errorf("%w %q: supported sources are %s", ErrUnknownSource, source, quoted)
+}
+
+// Sources lists the sources the registry can resolve, sorted.
+func (r *Registry) Sources() []string {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	sources := make([]string, 0, len(r.providers))
+	for source := range r.providers {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+	return sources
 }
 
 // No Close: every backend's client is HTTP, holding no connection pool or
