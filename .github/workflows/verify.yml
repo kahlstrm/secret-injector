@@ -17,6 +17,8 @@ jobs:
     name: Fmt Vet Test Build
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      BUDGET_BYTES: "20971520"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,17 +51,99 @@ jobs:
             --id secret-injector \
             --output "$PWD/bin/secret-injector"
 
+      # Measurement only; the binary-budget job enforces it.
+      - name: Measure release binary size
+        env:
+          BASE_REF: ${{ github.event.repository.default_branch }}
+        run: |
+          head_size=$(stat -c %s bin/secret-injector)
+          head_display=$(awk -v bytes="$head_size" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
+          budget_display=$(awk -v bytes="$BUDGET_BYTES" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
+          used_display=$(awk -v bytes="$head_size" -v budget="$BUDGET_BYTES" 'BEGIN { printf "%.0f%%", bytes * 100 / budget }')
+          base_size=null
+          notice="$head_display of $budget_display ($used_display)"
+
+          # Only a pull request has something to compare against.
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF"
+            base_sha=$(git rev-parse FETCH_HEAD)
+            base_dir="$RUNNER_TEMP/binary-size-base"
+            git worktree add --detach "$base_dir" "$base_sha"
+
+            (
+              cd "$base_dir"
+              GOOS=linux GOARCH=amd64 goreleaser build \
+                --single-target \
+                --snapshot \
+                --clean \
+                --id secret-injector \
+                --output "$RUNNER_TEMP/secret-injector-base"
+            )
+
+            base_size=$(stat -c %s "$RUNNER_TEMP/secret-injector-base")
+            delta=$((head_size - base_size))
+            base_display=$(awk -v bytes="$base_size" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
+            delta_display=$(awk -v bytes="$delta" 'BEGIN { printf "%+.2f KiB", bytes / 1024 }')
+            percent_display=$(awk -v delta="$delta" -v base="$base_size" 'BEGIN { printf "%+.2f%%", delta * 100 / base }')
+            notice="$head_display ($delta_display, $percent_display), $used_display of $budget_display"
+          fi
+
+          {
+            echo '### Release binary size'
+            echo
+            echo '| Revision | Size |'
+            echo '| --- | ---: |'
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              echo "| Base ($BASE_REF) | $base_display |"
+              echo "| PR | $head_display |"
+              echo "| Change | $delta_display ($percent_display) |"
+            else
+              echo "| Size | $head_display |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Release binary size::$notice"
+
+          jq -n \
+            --argjson base_size "$base_size" \
+            --argjson head_size "$head_size" \
+            --argjson budget_bytes "$BUDGET_BYTES" \
+            '{base_size: $base_size, head_size: $head_size, budget_bytes: $budget_bytes}' \
+            > "$RUNNER_TEMP/binary-size-report.json"
+
+      - name: Upload binary-size report
+        uses: actions/upload-artifact@v7
+        with:
+          name: binary-size-report
+          path: ${{ runner.temp }}/binary-size-report.json
+          if-no-files-found: error
+          retention-days: 1
+
+  # Its own job so an over-budget binary is a red check of its own, without
+  # failing test results or blocking the jobs that need them.
+  binary-budget:
+    name: Release Binary Budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - quality
+    steps:
+      - name: Download binary-size report
+        uses: actions/download-artifact@v8
+        with:
+          name: binary-size-report
+          path: binary-size-report
+
       # The release binary is a distribution artifact, commonly copied into
       # application images. The budget makes a dependency that no longer fits
       # a deliberate decision rather than a surprise found after release.
       - name: Enforce release binary budget
-        env:
-          BUDGET_BYTES: "20971520"
         run: |
-          size=$(stat -c %s bin/secret-injector)
+          report=binary-size-report/binary-size-report.json
+          size=$(jq -r '.head_size' "$report")
+          budget=$(jq -r '.budget_bytes' "$report")
           size_display=$(awk -v bytes="$size" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
-          budget_display=$(awk -v bytes="$BUDGET_BYTES" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
-          used_display=$(awk -v bytes="$size" -v budget="$BUDGET_BYTES" 'BEGIN { printf "%.0f%%", bytes * 100 / budget }')
+          budget_display=$(awk -v bytes="$budget" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
+          used_display=$(awk -v bytes="$size" -v budget="$budget" 'BEGIN { printf "%.0f%%", bytes * 100 / budget }')
 
           {
             echo '### Release binary budget'
@@ -69,65 +153,11 @@ jobs:
             echo "| $size_display | $budget_display | $used_display |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$size" -gt "$BUDGET_BYTES" ]; then
+          if [ "$size" -gt "$budget" ]; then
             echo "::error title=Release binary budget exceeded::$size_display exceeds the $budget_display budget"
             exit 1
           fi
           echo "::notice title=Release binary budget::$size_display of $budget_display ($used_display)"
-
-      - name: Compare release binary size
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          BASE_REF: ${{ github.event.repository.default_branch }}
-        run: |
-          git fetch --no-tags --depth=1 origin "$BASE_REF"
-          base_sha=$(git rev-parse FETCH_HEAD)
-          base_dir="$RUNNER_TEMP/binary-size-base"
-          git worktree add --detach "$base_dir" "$base_sha"
-
-          (
-            cd "$base_dir"
-            GOOS=linux GOARCH=amd64 goreleaser build \
-              --single-target \
-              --snapshot \
-              --clean \
-              --id secret-injector \
-              --output "$RUNNER_TEMP/secret-injector-base"
-          )
-
-          base_size=$(stat -c %s "$RUNNER_TEMP/secret-injector-base")
-          head_size=$(stat -c %s bin/secret-injector)
-          delta=$((head_size - base_size))
-          base_display=$(awk -v bytes="$base_size" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
-          head_display=$(awk -v bytes="$head_size" 'BEGIN { printf "%.2f MiB", bytes / 1048576 }')
-          delta_display=$(awk -v bytes="$delta" 'BEGIN { printf "%+.2f KiB", bytes / 1024 }')
-          percent_display=$(awk -v delta="$delta" -v base="$base_size" 'BEGIN { printf "%+.2f%%", delta * 100 / base }')
-
-          {
-            echo '### Release binary size'
-            echo
-            echo '| Revision | Size |'
-            echo '| --- | ---: |'
-            echo "| Base ($BASE_REF) | $base_display |"
-            echo "| PR | $head_display |"
-            echo "| Change | $delta_display ($percent_display) |"
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice title=Release binary size::$head_display ($delta_display, $percent_display)"
-
-          jq -n \
-            --argjson base_size "$base_size" \
-            --argjson head_size "$head_size" \
-            '{base_size: $base_size, head_size: $head_size}' \
-            > "$RUNNER_TEMP/binary-size-report.json"
-
-      - name: Upload binary-size report
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: binary-size-report
-          path: ${{ runner.temp }}/binary-size-report.json
-          if-no-files-found: error
-          retention-days: 1
 
   lint:
     name: Lint
