@@ -18,7 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      BUDGET_BYTES: "20971520"
+      # 25 MiB, raised from 20 for Google Secret Manager's gRPC and protobuf
+      # dependencies. See docs/backend-variants.md.
+      BUDGET_BYTES: "26214400"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

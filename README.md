@@ -8,6 +8,8 @@ Supported backends:
 - AWS Secrets Manager (`aws_secretsmanager`)
 - Google Secret Manager (`gcp_secretmanager`)
 
+All backends ship in one binary today. See [per-backend distribution](docs/backend-variants.md) for the proposed split into variants.
+
 ## Quick Start
 
 Install the CLI:
