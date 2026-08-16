@@ -24,7 +24,7 @@
           inherit version;
           src = ./.;
 
-          vendorHash = "sha256-lcB+Slg/yWdrQLd3ohPlAGLXf23wuSrWnUmhmQg5sFc=";
+          vendorHash = "sha256-SCvRO91pBvl8TKzMHHsjmoUZkByJXGGWFrpR9k0whIc=";
           subPackages = [ "cmd/secret-injector" ];
           doCheck = true;
           env.CGO_ENABLED = 0;

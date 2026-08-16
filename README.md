@@ -1,11 +1,12 @@
 # secret-injector
 
-`secret-injector` resolves secrets from AWS and exposes them as environment variables to a child process. It can also validate configurations or print resolved values for CI and shell workflows.
+`secret-injector` resolves secrets from AWS and Google Cloud and exposes them as environment variables to a child process. It can also validate configurations or print resolved values for CI and shell workflows.
 
 Supported backends:
 
 - AWS Systems Manager Parameter Store (`aws_ssm`)
 - AWS Secrets Manager (`aws_secretsmanager`)
+- Google Secret Manager (`gcp_secretmanager`)
 
 ## Quick Start
 
@@ -74,7 +75,7 @@ secrets:
 
 | Field | Required | Description |
 | --- | --- | --- |
-| `source` | Yes | Backend identifier: `aws_ssm` or `aws_secretsmanager` |
+| `source` | Yes | Backend identifier: `aws_ssm`, `aws_secretsmanager`, or `gcp_secretmanager` |
 | `ref` | Yes | Backend-specific parameter or secret identifier |
 | `optional` | No | Skip a missing value with a warning instead of failing; defaults to `false` |
 
@@ -142,6 +143,31 @@ Flags take precedence over their environment variables. Without an injector-spec
 | `aws_secretsmanager` | Secret name, ARN, or partial ARN | `secretsmanager:BatchGetSecretValue`; fallback may use `secretsmanager:GetSecretValue` |
 
 SSM parameters are requested with decryption enabled. Secrets Manager supports `SecretString`; binary secrets are rejected. Customer-managed KMS keys may also require `kms:Decrypt`.
+
+### Google Secret Manager
+
+```yaml
+secrets:
+  MODEM_PASSWORD:
+    source: gcp_secretmanager
+    ref: cable-modem
+  API_KEY:
+    source: gcp_secretmanager
+    ref: projects/my-project/secrets/api-key/versions/3
+```
+
+Refs are either a bare secret name, qualified by `--gcp-project` and pinned to the latest version, or a full resource name. A ref without a `/versions/` suffix resolves `latest`.
+
+| Flag | Environment variable | Description |
+| --- | --- | --- |
+| `--gcp-project` | `SECRET_INJECTOR_GCP_PROJECT`, then `GOOGLE_CLOUD_PROJECT` | Project qualifying bare secret refs |
+| `--gcp-credentials-file` | `SECRET_INJECTOR_GCP_CREDENTIALS_FILE` | Service account key file, overriding Application Default Credentials |
+
+A project must be set for bare refs; full resource names carry their own. The flag wins, then `SECRET_INJECTOR_GCP_PROJECT`, then `GOOGLE_CLOUD_PROJECT`, which is read when something has exported it. Note that neither `gcloud auth application-default login` nor Cloud Run exports it, so on those the project still has to be set explicitly. It is not derived from credentials or the metadata server, which keeps a bare ref with no project reporting a missing project rather than an authentication failure.
+
+Credentials come from Application Default Credentials unless `--gcp-credentials-file` is set, so `GOOGLE_APPLICATION_CREDENTIALS`, `gcloud auth application-default login`, and workload identity all work unchanged. Access requires `secretmanager.versions.access` on each secret.
+
+Secret Manager has no batch access API, so refs are resolved one request at a time. Payloads are verified against the CRC32C checksum the API returns, and are rejected if they contain a NUL byte or invalid UTF-8, since neither survives being an environment variable.
 
 ## Commands
 

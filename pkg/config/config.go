@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -129,13 +130,16 @@ func isValidEnvName(name string) bool {
 	return envNamePattern.MatchString(name)
 }
 
+// builtinSources are the sources Load accepts unless the caller supplies its own
+// validator through WithSourceValidator.
+var builtinSources = []string{"aws_ssm", "aws_secretsmanager", "gcp_secretmanager"}
+
 func defaultSourceValidator(source string) error {
-	switch source {
-	case "aws_ssm", "aws_secretsmanager":
+	if slices.Contains(builtinSources, source) {
 		return nil
-	default:
-		return fmt.Errorf("unsupported source %q: supported sources are 'aws_ssm' and 'aws_secretsmanager'", source)
 	}
+	quoted := "'" + strings.Join(builtinSources, "', '") + "'"
+	return fmt.Errorf("unsupported source %q: supported sources are %s", source, quoted)
 }
 
 func expandRef(ref string, vars map[string]string) (string, error) {
