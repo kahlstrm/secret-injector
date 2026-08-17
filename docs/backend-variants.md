@@ -13,6 +13,50 @@ The release binary is a distribution artifact, commonly copied into application
 images, so the weight is paid per image rather than once. Backends will keep
 arriving, and each one raises the floor for everybody.
 
+## Transport
+
+Most of that weight is the SDK's gRPC transport rather than Secret Manager itself.
+Measured on linux/amd64 with the release flags, resolving one real secret:
+
+| build | binary | peak RSS | goroutines |
+| --- | ---: | ---: | ---: |
+| no GCP backend | 14.98 MiB | — | — |
+| SDK, gRPC | 22.22 MiB | 23.97 MB | 7 |
+| SDK, `NewRESTClient` (current) | 22.19 MiB | 17.4 MB | 4 |
+| `google.golang.org/api/secretmanager/v1` | 21.43 MiB | — | — |
+| hand-written REST call | 15.45 MiB | 17.42 MB | 4 |
+
+Wall clock differences are noise: `net/http` negotiates HTTP/2 to
+`secretmanager.googleapis.com` too, so JSON versus protobuf is not a factor at one
+to five small payloads, and the 320-500 ms is TLS plus token plus one round trip
+either way.
+
+The backend uses the SDK over REST. That saves 32 KB, so it is not a size
+decision — gRPC still links, because the generated package imports it whichever
+constructor is used. It is a lifecycle decision: the gRPC transport owns a
+connection pool and background goroutines, so a resolver holding one has to be
+closed, and a registry holding resolvers has to expose that obligation to every
+caller. `restClient.Close` only drops its `httpClient` reference, so over REST
+there is nothing to release and the obligation disappears. Both transports are the
+same generated client, retry on the same conditions (`Unavailable`/`ResourceExhausted`
+versus 503/429, same backoff), and return `*apierror.APIError`, so `status.Code`
+still reports `NotFound` — the `codes.NotFound` check needs no change. The resolver
+contract enforces the property with `goleak`, which fails any backend that leaves a
+goroutine behind.
+
+Two alternatives were measured and rejected:
+
+- Calling the REST API directly saves 6.8 MiB, the only option that does, but
+  means owning ADC edge cases (impersonation, workload identity federation, quota
+  project), retry and backoff, and error mapping.
+- The discovery-generated `google.golang.org/api/secretmanager/v1` also has no
+  lifecycle, but saves only 0.79 MiB — `google.golang.org/api/option` references
+  gRPC types, so gRPC still links, and `gsm.New` is no escape hatch, being
+  `NewService` plus `option.WithHTTPClient`. It has no retry policy of its own.
+
+The build-tag split below returns the full weight to AWS-only users without either
+cost: the code stays SDK-based and the linker does the work.
+
 ## Shape
 
 Gate each backend behind a build tag and publish variants.
