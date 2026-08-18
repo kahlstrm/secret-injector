@@ -5,7 +5,7 @@ runs:
   using: composite
   steps:
     - name: Install GoReleaser
-      uses: goreleaser/goreleaser-action@v6
+      uses: goreleaser/goreleaser-action@v7
       with:
         version: v2.12.7
         install-only: true
