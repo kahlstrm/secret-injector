@@ -25,7 +25,7 @@
           src = ./.;
 
           goSum = ./go.sum;
-          vendorHash = "sha256-2BOMBMQyzeoFn1/g3xFvI0ghJWz5eGJ7/5KKzZo4+Ks=";
+          vendorHash = "sha256-eMY91LP5jyLoste+gLBWcjjvDSj3/cWnESkRzXMe5o4=";
           subPackages = [ "cmd/secret-injector" ];
           doCheck = true;
           env.CGO_ENABLED = 0;
