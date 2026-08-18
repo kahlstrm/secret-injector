@@ -78,17 +78,17 @@ func fetchCmd() *cli.Command {
 		Usage: "Resolve and print environment variable bindings",
 		Flags: append([]cli.Flag{formatFlag, vars, flagConfigFile, flagConfig}, backendFlags()...),
 		Action: func(ctx context.Context, c *cli.Command) error {
-			cfg, err := loadConfigFromInput(c)
-			if err != nil {
-				return err
-			}
-
 			format := c.String("format")
 			if format != "env" && format != "json" && format != "export" {
 				return fmt.Errorf("unknown format %q: must be env, json, or export", format)
 			}
 
 			registry := loader.DefaultWithOptions(warnToStderr, backendOptions(c))
+			cfg, err := loadConfigFromInput(c, config.WithSourceValidator(registry.ValidateSource))
+			if err != nil {
+				return err
+			}
+
 			values, err := registry.ResolveAll(ctx, cfg)
 			if err != nil {
 				return err
@@ -129,12 +129,12 @@ func execCmd() *cli.Command {
 				return errors.New("no command specified; usage: exec [flags] -- COMMAND [ARGS...]")
 			}
 
-			cfg, err := loadConfigFromInput(c)
+			registry := loader.DefaultWithOptions(warnToStderr, backendOptions(c))
+			cfg, err := loadConfigFromInput(c, config.WithSourceValidator(registry.ValidateSource))
 			if err != nil {
 				return err
 			}
 
-			registry := loader.DefaultWithOptions(warnToStderr, backendOptions(c))
 			secrets, err := registry.ResolveAll(ctx, cfg)
 			if err != nil {
 				return err
@@ -169,11 +169,8 @@ func validateCmd() *cli.Command {
 			flagConfig,
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
-			cfg, err := loadConfigFromInput(c)
+			cfg, err := loadConfigFromInput(c, config.WithSourceValidator(loader.Default(warnToStderr).ValidateSource))
 			if err != nil {
-				return err
-			}
-			if err := loader.Default(warnToStderr).Validate(cfg); err != nil {
 				return err
 			}
 			if c.Bool("debug") {
@@ -188,7 +185,7 @@ func validateCmd() *cli.Command {
 
 // loadConfigFromInput reads either --config or --config-file,
 // validates --var assignments, and decodes it via pkg/config with ref substitution.
-func loadConfigFromInput(c *cli.Command) (config.Config, error) {
+func loadConfigFromInput(c *cli.Command, opts ...config.LoadOption) (config.Config, error) {
 	inline := strings.TrimSpace(c.String("config"))
 	path := strings.TrimSpace(c.String("config-file"))
 	vars, err := parseVars(c.StringSlice("var"))
@@ -218,7 +215,7 @@ func loadConfigFromInput(c *cli.Command) (config.Config, error) {
 		r = f
 	}
 
-	return config.Load(r, config.WithVars(vars))
+	return config.Load(r, append([]config.LoadOption{config.WithVars(vars)}, opts...)...)
 }
 
 func parseVars(values []string) (map[string]string, error) {

@@ -186,3 +186,30 @@ func TestDefaultProviders_ShareAWSConfigLoader(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, calls)
 }
+func TestRegistry_ValidateSource(t *testing.T) {
+	reg := Default(nil)
+
+	require.NoError(t, reg.ValidateSource("gcp_secretmanager"))
+
+	err := reg.ValidateSource("custom")
+	require.ErrorIs(t, err, ErrUnknownSource)
+	assert.Contains(t, err.Error(), "supported sources are")
+	assert.Contains(t, err.Error(), "'aws_ssm'", "the message should name what is available")
+}
+
+func TestRegistry_SourcesAreSorted(t *testing.T) {
+	assert.Equal(t,
+		[]string{"aws_secretsmanager", "aws_ssm", "gcp_secretmanager"},
+		Default(nil).Sources())
+}
+
+func TestRegistry_ValidateSourceOnNilRegistry(t *testing.T) {
+	var reg *Registry
+
+	// Matches Validate and ResolveAll, which report an unknown source rather than
+	// panicking, since the method is handed to config.Load as a validator.
+	err := reg.ValidateSource("aws_ssm")
+
+	require.ErrorIs(t, err, ErrUnknownSource)
+	assert.Empty(t, reg.Sources())
+}

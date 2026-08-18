@@ -130,8 +130,9 @@ func isValidEnvName(name string) bool {
 	return envNamePattern.MatchString(name)
 }
 
-// builtinSources are the sources Load accepts unless the caller supplies its own
-// validator through WithSourceValidator.
+// builtinSources is the fallback for callers using Load without a validator. The
+// commands pass the registry's own sources instead, so this is not what the CLI
+// enforces.
 var builtinSources = []string{"aws_ssm", "aws_secretsmanager", "gcp_secretmanager"}
 
 func defaultSourceValidator(source string) error {
