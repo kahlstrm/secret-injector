@@ -46,7 +46,7 @@ jobs:
           fi
 
       - name: Checkout dependency update
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: candidate
@@ -88,7 +88,7 @@ jobs:
       # The dependency build above never receives this job's write token. This
       # job only applies and validates the patch it produced.
       - name: Checkout dependency update
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: candidate
