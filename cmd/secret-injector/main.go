@@ -76,7 +76,7 @@ func fetchCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "fetch",
 		Usage: "Resolve and print environment variable bindings",
-		Flags: append([]cli.Flag{formatFlag, vars, flagConfigFile, flagConfig}, awsFlags()...),
+		Flags: append([]cli.Flag{formatFlag, vars, flagConfigFile, flagConfig}, backendFlags()...),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			cfg, err := loadConfigFromInput(c)
 			if err != nil {
@@ -88,7 +88,7 @@ func fetchCmd() *cli.Command {
 				return fmt.Errorf("unknown format %q: must be env, json, or export", format)
 			}
 
-			registry := loader.DefaultWithOptions(warnToStderr, loader.DefaultOptions{AWS: awsOptions(c)})
+			registry := loader.DefaultWithOptions(warnToStderr, backendOptions(c))
 			values, err := registry.ResolveAll(ctx, cfg)
 			if err != nil {
 				return err
@@ -122,7 +122,7 @@ func execCmd() *cli.Command {
 		Name:      "exec",
 		Usage:     "Load secrets and execute a command with them as environment variables",
 		ArgsUsage: "-- COMMAND [ARGS...]",
-		Flags:     append([]cli.Flag{vars, flagConfigFile, flagConfig}, awsFlags()...),
+		Flags:     append([]cli.Flag{vars, flagConfigFile, flagConfig}, backendFlags()...),
 		Action: func(ctx context.Context, c *cli.Command) error {
 			args := c.Args().Slice()
 			if len(args) == 0 {
@@ -134,7 +134,7 @@ func execCmd() *cli.Command {
 				return err
 			}
 
-			registry := loader.DefaultWithOptions(warnToStderr, loader.DefaultOptions{AWS: awsOptions(c)})
+			registry := loader.DefaultWithOptions(warnToStderr, backendOptions(c))
 			secrets, err := registry.ResolveAll(ctx, cfg)
 			if err != nil {
 				return err

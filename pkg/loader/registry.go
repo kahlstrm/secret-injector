@@ -7,6 +7,7 @@ import (
 	awsconfig "github.com/kahlstrm/secret-injector/internal/aws/config"
 	awssecretsmanager "github.com/kahlstrm/secret-injector/internal/aws/secretsmanager"
 	awsssm "github.com/kahlstrm/secret-injector/internal/aws/ssm"
+	gcpsecretmanager "github.com/kahlstrm/secret-injector/internal/gcp/secretmanager"
 )
 
 // AWSOptions configures AWS resolution for the built-in providers.
@@ -15,12 +16,24 @@ type AWSOptions struct {
 	Region  string
 }
 
+// GCPOptions configures Google Secret Manager resolution.
+type GCPOptions struct {
+	// Project qualifies bare secret refs. Full resource names ignore it.
+	Project string
+	// CredentialsFile overrides Application Default Credentials discovery.
+	CredentialsFile string
+}
+
+// ErrGCPProjectRequired indicates a bare secret ref was used without a project.
+var ErrGCPProjectRequired = gcpsecretmanager.ErrProjectRequired
+
 // ErrAWSRegionRequired indicates that configured AWS resolution has no region.
 var ErrAWSRegionRequired = awsconfig.ErrRegionRequired
 
 // DefaultOptions configures the built-in providers.
 type DefaultOptions struct {
 	AWS AWSOptions
+	GCP GCPOptions
 }
 
 // New creates a registry from the provided providers.
@@ -54,7 +67,7 @@ func DefaultWithOptions(onWarning WarningHandler, options DefaultOptions, extra 
 			Profile: options.AWS.Profile,
 			Region:  options.AWS.Region,
 		})
-	})
+	}, options.GCP)
 	providers = append(providers, extra...)
 	return New(onWarning, providers...)
 }
@@ -70,7 +83,7 @@ func (p providerFunc) Build(ctx context.Context, onWarning WarningHandler) (Reso
 	return p.build(ctx, onWarning)
 }
 
-func defaultProviders(loadAWSConfig func(context.Context) (aws.Config, error)) []Provider {
+func defaultProviders(loadAWSConfig func(context.Context) (aws.Config, error), gcp GCPOptions) []Provider {
 	sharedAWSConfig := awsconfig.NewLoader(loadAWSConfig)
 
 	return []Provider{
@@ -94,5 +107,17 @@ func defaultProviders(loadAWSConfig func(context.Context) (aws.Config, error)) [
 				return awssecretsmanager.NewResolverFromAWSConfig(cfg, onWarning), nil
 			},
 		},
+		providerFunc{
+			source: "gcp_secretmanager",
+			build: func(_ context.Context, onWarning WarningHandler) (Resolver, error) {
+				return gcpsecretmanager.NewResolverFromOptions(gcpsecretmanager.Options{
+					Project:         gcp.Project,
+					CredentialsFile: gcp.CredentialsFile,
+				}, onWarning), nil
+			},
+		},
 	}
 }
+
+// No Close: every backend's client is HTTP, holding no connection pool or
+// goroutines, so a discarded registry leaks nothing.

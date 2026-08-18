@@ -562,3 +562,109 @@ func TestFetchCmd_DefaultFormat(t *testing.T) {
 	err := cmd.Run(context.Background(), []string{"app", "fetch", "--config", `{"secrets":{}}`})
 	require.NoError(t, err)
 }
+
+// The config validator keeps its own source list, so a backend can be registered
+// and still be rejected before resolution.
+func TestValidateCmd_AcceptsEveryRegisteredSource(t *testing.T) {
+	registry := loader.Default(nil)
+
+	for _, source := range []string{"aws_ssm", "aws_secretsmanager", "gcp_secretmanager"} {
+		t.Run(source, func(t *testing.T) {
+			cmd := &cli.Command{Commands: []*cli.Command{validateCmd()}}
+
+			_, stderr, err := captureOutput(t, func() error {
+				return cmd.Run(context.Background(), []string{
+					"app", "validate",
+					"--config", `{"secrets":{"X":{"source":"` + source + `","ref":"some-ref"}}}`,
+				})
+			})
+
+			require.NoError(t, err, "config validation rejected a registered source")
+			assert.Empty(t, stderr)
+			require.NoError(t, registry.Validate(config.Config{Secrets: config.Secrets{
+				"X": {Source: source, Ref: "some-ref"},
+			}}), "registry does not provide a source the config validator accepts")
+		})
+	}
+}
+
+func TestGCPOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		args    []string
+		wantGCP loader.GCPOptions
+	}{
+		{name: "empty", wantGCP: loader.GCPOptions{}},
+		{
+			name:    "injector environment variables",
+			env:     map[string]string{"SECRET_INJECTOR_GCP_PROJECT": "from-injector"},
+			wantGCP: loader.GCPOptions{Project: "from-injector"},
+		},
+		{
+			name:    "google convention is honoured",
+			env:     map[string]string{"GOOGLE_CLOUD_PROJECT": "from-google"},
+			wantGCP: loader.GCPOptions{Project: "from-google"},
+		},
+		{
+			name: "injector variable wins over the google convention",
+			env: map[string]string{
+				"SECRET_INJECTOR_GCP_PROJECT": "from-injector",
+				"GOOGLE_CLOUD_PROJECT":        "from-google",
+			},
+			wantGCP: loader.GCPOptions{Project: "from-injector"},
+		},
+		{
+			name: "flag wins over both",
+			env: map[string]string{
+				"SECRET_INJECTOR_GCP_PROJECT": "from-injector",
+				"GOOGLE_CLOUD_PROJECT":        "from-google",
+			},
+			args:    []string{"--gcp-project", "from-flag"},
+			wantGCP: loader.GCPOptions{Project: "from-flag"},
+		},
+		{
+			name:    "credentials file from the environment",
+			env:     map[string]string{"SECRET_INJECTOR_GCP_CREDENTIALS_FILE": "/keys/sa.json"},
+			wantGCP: loader.GCPOptions{CredentialsFile: "/keys/sa.json"},
+		},
+		{
+			name: "an empty injector variable shadows the google convention",
+			env: map[string]string{
+				"SECRET_INJECTOR_GCP_PROJECT": "",
+				"GOOGLE_CLOUD_PROJECT":        "from-google",
+			},
+			wantGCP: loader.GCPOptions{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// urfave/cli treats a present-but-empty variable as set, which would
+			// shadow later sources.
+			for _, name := range []string{
+				"SECRET_INJECTOR_GCP_PROJECT",
+				"SECRET_INJECTOR_GCP_CREDENTIALS_FILE",
+				"GOOGLE_CLOUD_PROJECT",
+			} {
+				t.Setenv(name, "")
+				require.NoError(t, os.Unsetenv(name))
+			}
+			for name, value := range tt.env {
+				t.Setenv(name, value)
+			}
+
+			var got loader.GCPOptions
+			cmd := &cli.Command{
+				Flags: gcpFlags(),
+				Action: func(_ context.Context, command *cli.Command) error {
+					got = gcpOptions(command)
+					return nil
+				},
+			}
+			err := cmd.Run(context.Background(), append([]string{"app"}, tt.args...))
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantGCP, got)
+		})
+	}
+}

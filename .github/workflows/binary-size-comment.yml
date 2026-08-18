@@ -15,7 +15,7 @@ permissions:
 jobs:
   comment:
     name: Update PR Comment
-    if: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.pull_requests[0] != null }}
+    if: ${{ github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0] != null }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -66,6 +66,7 @@ jobs:
               }
             }
 
+            const budget = report.budget_bytes;
             const delta = headSize - baseSize;
             const significant = Math.abs(delta) >= 100 * 1024 && Math.abs(delta) * 100 >= baseSize;
             const formatMiB = bytes => `${(bytes / (1024 ** 2)).toFixed(2)} MiB`;
@@ -84,26 +85,23 @@ jobs:
               comment.user?.type === 'Bot' && comment.body?.includes(marker)
             );
 
-            if (!significant) {
-              if (existing) {
-                await github.rest.issues.deleteComment({
-                  ...context.repo,
-                  comment_id: existing.id,
-                });
-              }
-              return;
-            }
+            const budgetRow = Number.isSafeInteger(budget) && budget > 0
+              ? `\n            | Budget | ${formatMiB(budget)} (${(headSize * 100 / budget).toFixed(0)}% used) |`
+              : '';
+            const note = Number.isSafeInteger(budget) && budget > 0 && headSize > budget
+              ? `\n\n            Over the ${formatMiB(budget)} budget. See the Release Binary Budget check.`
+              : significant
+                ? '\n\n            This exceeds the reporting threshold of 1% and 100 KiB.'
+                : '';
 
             const body = `${marker}
-            ### Significant release binary-size change
+            ### Release binary size
 
             | Revision | Size |
             | --- | ---: |
             | Base (${baseRef}) | ${formatMiB(baseSize)} |
             | PR | ${formatMiB(headSize)} |
-            | Change | ${formatKiBDelta(delta)} (${formatPercent(delta, baseSize)}) |
-
-            This exceeds the reporting threshold of 1% and 100 KiB.`;
+            | Change | ${formatKiBDelta(delta)} (${formatPercent(delta, baseSize)}) |${budgetRow}${note}`;
 
             if (existing) {
               await github.rest.issues.updateComment({

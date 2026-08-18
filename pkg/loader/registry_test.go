@@ -167,7 +167,7 @@ func TestDefaultProviders_LoadAWSConfigLazily(t *testing.T) {
 	reg := New(nil, defaultProviders(func(context.Context) (aws.Config, error) {
 		calls++
 		return aws.Config{}, nil
-	})...)
+	}, GCPOptions{})...)
 
 	require.NotNil(t, reg)
 	assert.Equal(t, 0, calls)
@@ -178,7 +178,7 @@ func TestDefaultProviders_ShareAWSConfigLoader(t *testing.T) {
 	reg := New(nil, defaultProviders(func(context.Context) (aws.Config, error) {
 		calls++
 		return aws.Config{}, nil
-	})...)
+	}, GCPOptions{})...)
 
 	_, err := reg.resolverForSource(context.Background(), "aws_ssm")
 	require.NoError(t, err)
