@@ -27,9 +27,11 @@ type resolverPath struct {
 	resolve ResolveFunc
 }
 
-// Run verifies common found and missing semantics against each provided resolver.
+// Run verifies common found and missing semantics against each provided resolver,
+// and that resolving leaks no goroutines.
 func Run(t *testing.T, fixture Fixture) {
 	t.Helper()
+	assertNoGoroutineLeaks(t)
 	require.NotNil(t, fixture.Resolve)
 	require.NotEmpty(t, fixture.Values)
 	require.NotEmpty(t, fixture.MissingRef)

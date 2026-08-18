@@ -19,6 +19,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.43.0
 	github.com/testcontainers/testcontainers-go/modules/localstack v0.43.0
 	github.com/urfave/cli/v3 v3.4.1
+	go.uber.org/goleak v1.3.0
 	google.golang.org/api v0.287.1
 	google.golang.org/grpc v1.82.0
 	gopkg.in/yaml.v3 v3.0.1
