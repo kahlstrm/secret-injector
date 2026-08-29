@@ -57,6 +57,13 @@ make itest                                                      # Run all
 go test -tags=integration -run TestExecIntegration ./cmd/...    # Run specific
 ```
 
+### Go Dependency Updates
+
+After manually changing `go.mod` or `go.sum`, refresh the `vendorHash` in
+`flake.nix` and run `nix flake check -L`. The vendor-hash workflow only updates
+pull requests authored by Dependabot, so manual dependency pull requests must
+include the refreshed hash.
+
 ## Code Style Guidelines
 
 ### Import Ordering
